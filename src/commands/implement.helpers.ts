@@ -1,5 +1,5 @@
 import * as path from 'path';
-import type { CommandContext, CommandResult } from '../types';
+import type { CommandResult } from '../types';
 import {
   fileExists,
   readFile,
@@ -7,7 +7,6 @@ import {
 } from '../utils/fileSystem';
 import { parseTracksIndex, parsePlanTasks } from '../utils/markdown';
 import { loadAllSkills, findActiveSkills } from '../utils/skills';
-import { validateSetup, validateTrackSelection } from '../utils/validation';
 
 // Helper function to validate project setup
 export function validateProjectSetup(conductorDir: string): CommandResult | null {

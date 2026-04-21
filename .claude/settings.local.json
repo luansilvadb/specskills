@@ -16,7 +16,11 @@
       "Bash(grep -v \"^.*//\")",
       "Bash(git add *)",
       "Bash(git commit -m 'Refactor: Clean up and modularize implement command functionality *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git remote *)",
+      "Bash(grep -n \"//\" d:\\\\specskills\\\\src\\\\commands\\\\implement.ts)",
+      "Bash(powershell -Command \"Select-String -Path 'd:\\\\specskills\\\\src\\\\commands\\\\implement.helpers.ts' -Pattern 'validateSetup|validateTrackSelection'\")"
     ]
   }
 }

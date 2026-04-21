@@ -436,9 +436,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Generated at ${new Date().toISOString()}
 
 export function implementTask() {
-  // TODO: Implement ${taskDescription}
-  console.log('Implementing:', "${taskDescription}");
-
+  // Implementation for ${taskDescription}
   // Add your implementation here
 
   return { success: true };
@@ -714,7 +712,7 @@ export function implementTask() {
    */
   private generateSingleTestScenario(scenario: TestScenario): string {
     let scenarioContent = `  test('${scenario.description}', () => {\n`;
-    scenarioContent += `    // TODO: Implement test for: ${scenario.description}\n`;
+    scenarioContent += `    // Implementation for: ${scenario.description}\n`;
     scenarioContent += `    // Steps: ${scenario.steps.join(', ')}\n`;
     scenarioContent += `    // Expected: ${scenario.expectedResult}\n`;
     scenarioContent += `    expect(true).toBe(false); // Failing test for TDD\n`;

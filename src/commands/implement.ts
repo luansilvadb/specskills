@@ -9,7 +9,6 @@ import {
   readFile,
   resolveConductorDir,
 } from '../utils/fileSystem';
-import { parseTracksIndex, parsePlanTasks } from '../utils/markdown';
 import { validateSetup, validateTrackSelection, handleOperationFailure } from '../utils/validation';
 import { TaskExecutionManager } from '../utils/taskExecution';
 import {
@@ -183,8 +182,8 @@ function generateWorkflowInstructions(): string {
   return message;
 }
 
-// Helper function to handle task execution
-async function executeCurrentTask(selectedTrack: any, tasks: any[], conductorDir: string): Promise<CommandResult> {
+// Helper function to select current task
+function selectCurrentTask(tasks: any[]): any {
   let currentTask: any = tasks.find((t: any) => t.status === 'in_progress');
 
   if (!currentTask) {
@@ -192,37 +191,49 @@ async function executeCurrentTask(selectedTrack: any, tasks: any[], conductorDir
     const pendingTask: any = tasks.find((t: any) => t.status === 'pending');
     if (pendingTask) {
       currentTask = pendingTask;
-    } else {
-      return {
-        success: true,
-        message: `[NO TASK] No tasks are currently in progress or pending.\n\nAll tasks completed!`
-      };
     }
+  }
+
+  return currentTask;
+}
+
+// Helper function to create task for execution
+function createTaskForExecution(task: any): any {
+  return {
+    id: task.id || 'unknown',
+    description: task.description || '',
+    status: task.status || 'pending',
+    type: task.type || 'development',
+    priority: task.priority || 'medium',
+    ...task
+  };
+}
+
+// Helper function to handle task execution
+async function executeCurrentTask(selectedTrack: any, tasks: any[], conductorDir: string): Promise<CommandResult> {
+  const currentTask = selectCurrentTask(tasks);
+
+  if (!currentTask) {
+    return {
+      success: true,
+      message: `[NO TASK] No tasks are currently in progress or pending.\n\nAll tasks completed!`
+    };
   }
 
   // Create an instance of TaskExecutionManager
   const taskManager = new TaskExecutionManager();
   const trackDir = path.join(conductorDir, selectedTrack.folderPath);
 
-  // Execute the current task atomically - convert to compatible type
-  const taskForExecution: any = {
-    id: currentTask.id || 'unknown',
-    description: currentTask.description || '',
-    status: currentTask.status || 'pending',
-    type: currentTask.type || 'development',
-    priority: currentTask.priority || 'medium',
-    ...currentTask
-  };
-
+  // Execute the current task atomically
+  const taskForExecution = createTaskForExecution(currentTask);
   const result = await taskManager.executeTaskAtomically(taskForExecution, trackDir);
 
   return result;
 }
 
-// Helper function to handle phase verification
-async function verifyPhase(selectedTrack: any, tasks: any[], conductorDir: string, context: CommandContext): Promise<CommandResult> {
-  // Convert tasks to compatible type
-  const tasksForVerification = tasks.map((t: any) => ({
+// Helper function to create tasks for verification
+function createTasksForVerification(tasks: any[]): any[] {
+  return tasks.map((t: any) => ({
     id: t.id || 'unknown',
     description: t.description || '',
     status: t.status || 'pending',
@@ -230,6 +241,11 @@ async function verifyPhase(selectedTrack: any, tasks: any[], conductorDir: strin
     priority: t.priority || 'medium',
     ...t
   }));
+}
+
+// Helper function to handle phase verification
+async function verifyPhase(selectedTrack: any, tasks: any[], conductorDir: string, context: CommandContext): Promise<CommandResult> {
+  const tasksForVerification = createTasksForVerification(tasks);
 
   // Check if context.data contains information about the phase to verify
   const phaseName = context.data?.phaseToVerify || 'current';
@@ -244,6 +260,191 @@ async function verifyPhase(selectedTrack: any, tasks: any[], conductorDir: strin
   return result;
 }
 
+// Helper function to handle task execution
+async function handleTaskExecution(context: CommandContext, args: string[]): Promise<CommandResult> {
+  const conductorDir = resolveConductorDir(context.projectRoot);
+
+  // Read and parse tracks
+  const { tracks, result: tracksResult } = readAndParseTracks(conductorDir);
+  if (tracksResult) {
+    return tracksResult;
+  }
+
+  // Select track
+  const { selectedTrack, result: selectionResult } = selectTrack(tracks, args.slice(1)); // Skip 'task' argument
+  if (selectionResult) {
+    return selectionResult;
+  }
+
+  if (!selectedTrack) {
+    return {
+      success: false,
+      message: 'No track selected for task execution. Please specify a track or create one with /newTrack.'
+    };
+  }
+
+  // Read and parse track plan
+  const { planContent: __, activeSkills, tasks, result: planResult } = readAndParseTrackPlan(
+    path.join(conductorDir, selectedTrack.folderPath),
+    selectedTrack,
+    conductorDir
+  );
+  if (planResult) {
+    return planResult;
+  }
+
+  // Execute the current task
+  return await executeCurrentTask(selectedTrack, tasks, conductorDir);
+}
+
+// Helper function to handle phase verification
+async function handlePhaseVerification(context: CommandContext, args: string[]): Promise<CommandResult> {
+  const conductorDir = resolveConductorDir(context.projectRoot);
+
+  // Read and parse tracks
+  const { tracks, result: tracksResult } = readAndParseTracks(conductorDir);
+  if (tracksResult) {
+    return tracksResult;
+  }
+
+  // Select track
+  const { selectedTrack, result: selectionResult } = selectTrack(tracks, args.slice(1)); // Skip 'verify-phase' argument
+  if (selectionResult) {
+    return selectionResult;
+  }
+
+  if (!selectedTrack) {
+    return {
+      success: false,
+      message: 'No track selected for phase verification. Please specify a track or create one with /newTrack.'
+    };
+  }
+
+  // Read and parse track plan
+  const { planContent: __, activeSkills, tasks, result: planResult } = readAndParseTrackPlan(
+    path.join(conductorDir, selectedTrack.folderPath),
+    selectedTrack,
+    conductorDir
+  );
+  if (planResult) {
+    return planResult;
+  }
+
+  // Verify the phase
+  return await verifyPhase(selectedTrack, tasks, conductorDir, context);
+}
+
+// Helper function to validate setup
+function validateSetupProcess(context: CommandContext): CommandResult | null {
+  const setupValidation = validateSetup(context);
+  if (!setupValidation.success) {
+    return {
+      success: false,
+      message: `[SETUP CHECK FAILED] ${setupValidation.message}\n\n${setupValidation.errors?.join('\n')}\n\nConductor is not set up. Please run /setup.`
+    };
+  }
+  return null;
+}
+
+// Helper function to validate track selection
+function validateTrackSelectionProcess(context: CommandContext): CommandResult | null {
+  const trackSelectionValidation = validateTrackSelection(context);
+  if (!trackSelectionValidation.success) {
+    return {
+      success: false,
+      message: `[TRACK SELECTION FAILED] ${trackSelectionValidation.message}\n\n${trackSelectionValidation.errors?.join('\n')}`
+    };
+  }
+  return null;
+}
+
+// Helper function to validate track structure
+function validateTrackStructureProcess(trackPath: string, selectedTrack: any): CommandResult | null {
+  return validateTrackStructure(trackPath, selectedTrack);
+}
+
+// Helper function to check process integrity
+function checkProcessIntegrity(conductorDir: string, selectedTrack: any): CommandResult | null {
+  // Check if spec.md exists and has been reviewed/approved
+  const specPath = path.join(conductorDir, selectedTrack.folderPath, 'spec.md');
+  if (!fileExists(specPath)) {
+    return {
+      success: false,
+      message: `[BLOCKED] **Process Integrity Check Failed**\n\nO arquivo de especificação \`spec.md\` não existe para a track: **${selectedTrack.description}**\n\nO Conductor exige que:\n1. A especificação seja criada com /newTrack\n2. O plano seja revisado antes da implementação\n3. A aprovação seja dada explicitamente\n\nPor favor, execute /newTrack primeiro para criar os documentos necessários.`
+    };
+  }
+
+  // Check if plan.md exists and has been reviewed
+  const planPath = path.join(conductorDir, selectedTrack.folderPath, 'plan.md');
+  if (!fileExists(planPath)) {
+    return {
+      success: false,
+      message: `[BLOCKED] **Process Integrity Check Failed**\n\nO arquivo de plano \`plan.md\` não existe para a track: **${selectedTrack.description}**\n\nO Conductor exige que:\n1. O plano seja criado com /newTrack\n2. O plano seja revisado antes da implementação\n3. A aprovação seja dada explicitamente\n\nPor favor, execute /newTrack primeiro para criar os documentos necessários.`
+    };
+  }
+
+  // Read the plan to check if it has tasks
+  const planContent = readFile(planPath);
+  if (!planContent || !planContent.includes('- [ ] ')) {
+    return {
+      success: false,
+      message: `[BLOCKED] **Process Integrity Check Failed**\n\nO plano para **${selectedTrack.description}** não contém tarefas definidas.\n\nO Conductor exige que:\n1. As tarefas estejam definidas no plano\n2. O plano seja revisado antes da implementação\n\nPor favor, revise o arquivo \`plan.md\` e adicione as tarefas antes de prosseguir.`
+    };
+  }
+
+  // Check if spec content is readable
+  const specContent = readFile(specPath);
+  if (!specContent) {
+    return {
+      success: false,
+      message: `[BLOCKED] **Process Integrity Check Failed**\n\nNão foi possível ler o arquivo de especificação para **${selectedTrack.description}**.\n\nO processo do Conductor exige que a especificação esteja completa e revisada antes da implementação.`
+    };
+  }
+
+  return null;
+}
+
+// Helper function to handle track completion
+function handleTrackCompletion(tasks: any[]): { completed: boolean; result: CommandResult | null } {
+  const pendingTasks = tasks.filter(t => t.status === 'pending');
+  const currentTask = tasks.find(t => t.status === 'in_progress');
+
+  // Completion Logic (Protocol 4.0 & 5.0)
+  if (pendingTasks.length === 0 && !currentTask) {
+    return {
+      completed: true,
+      result: {
+        success: true,
+        message: `[SUCCESS] **Track Implementation Complete**\n\nI will now initiate the **Synchronization Protocol (4.0)** and **Cleanup (5.0)**.\n\n**O Agente deve agora:**\n1. Comparar as alterações implementadas com o \`spec.md\`.\n2. Propor atualizações para \`product.md\`, \`tech-stack.md\` e \`product-guidelines.md\`.\n3. Após aprovação, atualizar o \`index.md\` e decidir o destino desta track.`,
+        questions: [
+          {
+            header: "Sync Docs",
+            question: "Should I analyze the specification and propose updates to `product.md` and `tech-stack.md`?",
+            type: "yesno"
+          },
+          {
+            header: "Cleanup",
+            question: "What should I do with this track folder?",
+            type: "choice",
+            options: [
+              { label: "Archive", description: "Move to conductor/archive/" },
+              { label: "Delete", description: "Permanently remove track" },
+              { label: "Keep", description: "Leave it in the tracks list" }
+            ]
+          }
+        ],
+        data: {
+          trackId: path.basename(tasks[0]?.folderPath || 'unknown'),
+          canSync: true,
+          protocol: '4.0'
+        }
+      }
+    };
+  }
+
+  return { completed: false, result: null };
+}
+
 export const implementCommand: SlashCommand = {
   name: 'implement',
   description: 'Executes the tasks defined in the specified track\'s plan',
@@ -251,85 +452,16 @@ export const implementCommand: SlashCommand = {
     try {
       // Check if we're executing a specific action (task, verify-phase)
       if (args[0] === 'task') {
-        // Execute the current task atomically
-        const conductorDir = resolveConductorDir(context.projectRoot);
-
-        // Read and parse tracks
-        const { tracks, result: tracksResult } = readAndParseTracks(conductorDir);
-        if (tracksResult) {
-          return tracksResult;
-        }
-
-        // Select track
-        const { selectedTrack, result: selectionResult } = selectTrack(tracks, args.slice(1)); // Skip 'task' argument
-        if (selectionResult) {
-          return selectionResult;
-        }
-
-        if (!selectedTrack) {
-          return {
-            success: false,
-            message: 'No track selected for task execution. Please specify a track or create one with /newTrack.'
-          };
-        }
-
-        // Read and parse track plan
-        const { planContent: __, activeSkills, tasks, result: planResult } = readAndParseTrackPlan(
-          path.join(conductorDir, selectedTrack.folderPath),
-          selectedTrack,
-          conductorDir
-        );
-        if (planResult) {
-          return planResult;
-        }
-
-        // Execute the current task
-        return await executeCurrentTask(selectedTrack, tasks, conductorDir);
+        return await handleTaskExecution(context, args);
       } else if (args[0] === 'verify-phase') {
-        // Verify phase completion
-        const conductorDir = resolveConductorDir(context.projectRoot);
-
-        // Read and parse tracks
-        const { tracks, result: tracksResult } = readAndParseTracks(conductorDir);
-        if (tracksResult) {
-          return tracksResult;
-        }
-
-        // Select track
-        const { selectedTrack, result: selectionResult } = selectTrack(tracks, args.slice(1)); // Skip 'verify-phase' argument
-        if (selectionResult) {
-          return selectionResult;
-        }
-
-        if (!selectedTrack) {
-          return {
-            success: false,
-            message: 'No track selected for phase verification. Please specify a track or create one with /newTrack.'
-          };
-        }
-
-        // Read and parse track plan
-        const { planContent: __, activeSkills, tasks, result: planResult } = readAndParseTrackPlan(
-          path.join(conductorDir, selectedTrack.folderPath),
-          selectedTrack,
-          conductorDir
-        );
-        if (planResult) {
-          return planResult;
-        }
-
-        // Verify the phase
-        return await verifyPhase(selectedTrack, tasks, conductorDir, context);
+        return await handlePhaseVerification(context, args);
       }
 
       // Original implementation logic
       // 1. Setup Check Protocol
-      const setupValidation = validateSetup(context);
-      if (!setupValidation.success) {
-        return {
-          success: false,
-          message: `[SETUP CHECK FAILED] ${setupValidation.message}\n\n${setupValidation.errors?.join('\n')}\n\nConductor is not set up. Please run /setup.`
-        };
+      const setupValidation = validateSetupProcess(context);
+      if (setupValidation) {
+        return setupValidation;
       }
 
       const conductorDir = resolveConductorDir(context.projectRoot);
@@ -341,12 +473,9 @@ export const implementCommand: SlashCommand = {
       }
 
       // 2. Track Selection Validation
-      const trackSelectionValidation = validateTrackSelection(context);
-      if (!trackSelectionValidation.success) {
-        return {
-          success: false,
-          message: `[TRACK SELECTION FAILED] ${trackSelectionValidation.message}\n\n${trackSelectionValidation.errors?.join('\n')}`
-        };
+      const trackSelectionValidation = validateTrackSelectionProcess(context);
+      if (trackSelectionValidation) {
+        return trackSelectionValidation;
       }
 
       // Read and parse tracks
@@ -369,75 +498,21 @@ export const implementCommand: SlashCommand = {
       }
 
       // Validate track structure
-      const structureValidation = validateTrackStructure(path.join(conductorDir, selectedTrack.folderPath), selectedTrack);
+      const trackPath = path.join(conductorDir, selectedTrack.folderPath);
+      const structureValidation = validateTrackStructureProcess(trackPath, selectedTrack);
       if (structureValidation) {
         return structureValidation;
       }
 
       // Verify process integrity before allowing implementation
-      const integrityCheck = (() => {
-        // Check if spec.md exists and has been reviewed/approved
-        const specCheck = (() => {
-          const specPath = path.join(path.join(conductorDir, selectedTrack.folderPath), 'spec.md');
-          if (!fileExists(specPath)) {
-            return {
-              success: false,
-              message: `[BLOCKED] **Process Integrity Check Failed**\n\nO arquivo de especificação \`spec.md\` não existe para a track: **${selectedTrack.description}**\n\nO Conductor exige que:\n1. A especificação seja criada com /newTrack\n2. O plano seja revisado antes da implementação\n3. A aprovação seja dada explicitamente\n\nPor favor, execute /newTrack primeiro para criar os documentos necessários.`
-            };
-          }
-
-          return null;
-        })();
-        if (specCheck) return specCheck;
-
-        // Check if plan.md exists and has been reviewed
-        const planCheck = (() => {
-          const planPath = path.join(path.join(conductorDir, selectedTrack.folderPath), 'plan.md');
-          if (!fileExists(planPath)) {
-            return {
-              success: false,
-              message: `[BLOCKED] **Process Integrity Check Failed**\n\nO arquivo de plano \`plan.md\` não existe para a track: **${selectedTrack.description}**\n\nO Conductor exige que:\n1. O plano seja criado com /newTrack\n2. O plano seja revisado antes da implementação\n3. A aprovação seja dada explicitamente\n\nPor favor, execute /newTrack primeiro para criar os documentos necessários.`
-            };
-          }
-
-          // Read the plan to check if it has tasks
-          const planContent = readFile(planPath);
-          if (!planContent || !planContent.includes('- [ ] ')) {
-            return {
-              success: false,
-              message: `[BLOCKED] **Process Integrity Check Failed**\n\nO plano para **${selectedTrack.description}** não contém tarefas definidas.\n\nO Conductor exige que:\n1. As tarefas estejam definidas no plano\n2. O plano seja revisado antes da implementação\n\nPor favor, revise o arquivo \`plan.md\` e adicione as tarefas antes de prosseguir.`
-            };
-          }
-
-          return null;
-        })();
-        if (planCheck) return planCheck;
-
-        // Check if spec content is readable
-        const specContentCheck = (() => {
-          const specPath = path.join(path.join(conductorDir, selectedTrack.folderPath), 'spec.md');
-          const specContent = readFile(specPath);
-          if (!specContent) {
-            return {
-              success: false,
-              message: `[BLOCKED] **Process Integrity Check Failed**\n\nNão foi possível ler o arquivo de especificação para **${selectedTrack.description}**.\n\nO processo do Conductor exige que a especificação esteja completa e revisada antes da implementação.`
-            };
-          }
-
-          return null;
-        })();
-        if (specContentCheck) return specContentCheck;
-
-        // All checks passed
-        return null;
-      })();
+      const integrityCheck = checkProcessIntegrity(conductorDir, selectedTrack);
       if (integrityCheck) {
         return integrityCheck;
       }
 
       // Read and parse track plan
       const { planContent: __, activeSkills, tasks, result: planResult } = readAndParseTrackPlan(
-        path.join(conductorDir, selectedTrack.folderPath),
+        trackPath,
         selectedTrack,
         conductorDir
       );
@@ -446,51 +521,13 @@ export const implementCommand: SlashCommand = {
       }
 
       // Handle track completion if applicable
-      const { completed, result: completionResult } = (() => {
-        const pendingTasks = tasks.filter(t => t.status === 'pending');
-        const currentTask = tasks.find(t => t.status === 'in_progress');
-
-        // Completion Logic (Protocol 4.0 & 5.0)
-        if (pendingTasks.length === 0 && !currentTask) {
-          return {
-            completed: true,
-            result: {
-              success: true,
-              message: `[SUCCESS] **Track Implementation Complete**\n\nI will now initiate the **Synchronization Protocol (4.0)** and **Cleanup (5.0)**.\n\n**O Agente deve agora:**\n1. Comparar as alterações implementadas com o \`spec.md\`.\n2. Propor atualizações para \`product.md\`, \`tech-stack.md\` e \`product-guidelines.md\`.\n3. Após aprovação, atualizar o \`index.md\` e decidir o destino desta track.`,
-              questions: [
-                {
-                  header: "Sync Docs",
-                  question: "Should I analyze the specification and propose updates to `product.md` and `tech-stack.md`?",
-                  type: "yesno"
-                },
-                {
-                  header: "Cleanup",
-                  question: "What should I do with this track folder?",
-                  type: "choice",
-                  options: [
-                    { label: "Archive", description: "Move to conductor/archive/" },
-                    { label: "Delete", description: "Permanently remove track" },
-                    { label: "Keep", description: "Leave it in the tracks list" }
-                  ]
-                }
-              ],
-              data: {
-                trackId: path.basename(selectedTrack.folderPath),
-                canSync: true,
-                protocol: '4.0'
-              }
-            }
-          };
-        }
-
-        return { completed: false, result: null };
-      })();
+      const { completed, result: completionResult } = handleTrackCompletion(tasks);
       if (completed) {
         return completionResult!;
       }
 
       // Generate implementation guidance
-      const message = generateImplementationGuidance(selectedTrack, tasks, activeSkills, conductorDir, path.join(conductorDir, selectedTrack.folderPath));
+      const message = generateImplementationGuidance(selectedTrack, tasks, activeSkills, conductorDir, trackPath);
 
       return {
         success: true,
