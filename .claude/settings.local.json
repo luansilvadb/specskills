@@ -14,7 +14,8 @@
       "Bash(xargs ls *)",
       "Bash(xargs grep *)",
       "Bash(grep -v \"^.*//\")",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m 'Refactor: Clean up and modularize implement command functionality *)"
     ]
   }
 }
