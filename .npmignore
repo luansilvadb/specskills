@@ -1,0 +1,34 @@
+# Source files
+src/
+tsconfig.json
+
+# Development tools & config
+. agents/
+.github/
+.vscode/
+.eslintrc.json
+.prettierrc
+.gitignore
+scratch/
+coverage/
+
+# Tests
+**/__tests__/
+**/*.spec.ts
+**/*.test.ts
+dist/**/*.spec.*
+dist/**/*.map
+
+# Documentation
+ADR/
+CONTRIBUTING.md
+CHANGELOG.md
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db

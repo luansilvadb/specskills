@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test *)",
+      "Bash(npm run *)",
+      "Bash(npm pack *)",
+      "Bash(dir /s *.toml)",
+      "Bash(grep \":$\")",
+      "Bash(sed 's/:$//')",
+      "Bash(npx tsc *)",
+      "Bash(npx ts-node *)",
+      "Bash(node dist/cli.js --help)",
+      "Bash(node dist/cli.js registerSkill --help)"
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+[
+  {
+    "skillId": "react-auth",
+    "trackId": "demo-track",
+    "projectId": "demo-project",
+    "timestamp": "2026-04-21T20:46:12.096Z",
+    "feedbackType": "positive",
+    "rating": 5,
+    "comment": "Great skill for React authentication",
+    "context": "User authentication flow",
+    "outcome": "Successfully created auth component",
+    "effectiveness": 0.95,
+    "id": "feedback_1776804372097_pa67pk6jd"
+  },
+  {
+    "skillId": "react-auth",
+    "trackId": "demo-track",
+    "projectId": "demo-project",
+    "timestamp": "2026-04-21T20:52:00.920Z",
+    "feedbackType": "positive",
+    "rating": 5,
+    "comment": "Great skill for React authentication",
+    "context": "User authentication flow",
+    "outcome": "Successfully created auth component",
+    "effectiveness": 0.95,
+    "id": "feedback_1776804720920_3xisrhmkl"
+  }
+]

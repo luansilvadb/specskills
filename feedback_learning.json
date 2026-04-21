@@ -1,0 +1,18 @@
+[
+  {
+    "skillId": "react-auth",
+    "totalActivations": 2,
+    "positiveFeedback": 2,
+    "negativeFeedback": 0,
+    "averageRating": 5,
+    "totalRatingSum": 10,
+    "lastUsed": "2026-04-21T20:52:00.920Z",
+    "successRate": 1,
+    "improvementSuggestions": [],
+    "effectivenessHistory": [
+      0.95,
+      0.95
+    ],
+    "usageDurationHistory": []
+  }
+]
