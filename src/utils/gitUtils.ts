@@ -297,9 +297,25 @@ export class GitManager {
    * Execute git command in project directory
    */
   private execGit(args: string[]): { stdout: string, stderr: string } {
-    const result = child_process.spawnSync('git', args, {
+    return this.execCommand('git', args);
+  }
+
+  /**
+   * Execute command with cwd
+   */
+  private execGitCmdWithCwd(command: string): { stdout: string, stderr: string } {
+    const [cmd, ...args] = command.split(' ');
+    return this.execCommand(cmd, args, 30000); // 30 second timeout
+  }
+
+  /**
+   * Generic command executor
+   */
+  private execCommand(cmd: string, args: string[], timeout?: number): { stdout: string, stderr: string } {
+    const result = child_process.spawnSync(cmd, args, {
       cwd: this.projectRoot,
       encoding: 'utf-8',
+      ...(timeout && { timeout })
     });
 
     if (result.error) {
@@ -307,7 +323,7 @@ export class GitManager {
     }
 
     if (result.status !== 0) {
-      const error = new Error(result.stderr || 'Git command failed');
+      const error = new Error(result.stderr || `${cmd} command failed`);
       (error as any).stderr = result.stderr;
       (error as any).stdout = result.stdout;
       throw error;
@@ -316,23 +332,6 @@ export class GitManager {
     return {
       stdout: result.stdout,
       stderr: result.stderr
-    };
-  }
-
-  /**
-   * Execute command with cwd
-   */
-  private execGitCmdWithCwd(command: string): { stdout: string, stderr: string } {
-    const [cmd, ...args] = command.split(' ');
-    const result = child_process.spawnSync(cmd, args, {
-      cwd: this.projectRoot,
-      encoding: 'utf-8',
-      timeout: 30000, // 30 second timeout
-    });
-
-    return {
-      stdout: result.stdout || '',
-      stderr: result.stderr || ''
     };
   }
 

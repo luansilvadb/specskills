@@ -178,72 +178,114 @@ export class TaskExecutionManager {
     // Update context to green phase
     context.currentPhase = 'green';
 
-    // Attempt to run tests to verify implementation
     const gitManager = new GitManager(trackDir);
-    let testResult = await gitManager.runTestSuite();
-    let attempts = 0;
-    let maxAttempts = 2; // Maximum 2 automatic correction attempts
 
-    // If tests are already passing, proceed to implementation
+    // Try to pass tests in sequence: initial → implementation → debugging
+    let testResult = await this.initializeGreenPhase(task, context, gitManager, trackDir);
+
     if (!testResult.success) {
-      // Implementation based on task requirements and active skills
-      await this.performImplementation(task, trackDir, context.activeSkills || []);
-
-      // Run tests again after implementation
-      testResult = await gitManager.runTestSuite();
+      testResult = await this.handleImplementationAttempt(task, context, gitManager, trackDir);
     }
 
-    // If tests still fail, try to debug automatically up to 2 times
+    if (!testResult.success) {
+      testResult = await this.handleDebuggingAttempts(task, context, gitManager, trackDir);
+    }
+
+    context.testResults = this.createTestResultContext(testResult);
+
+    return testResult.success
+      ? this.createSuccessfulGreenPhaseResponse(task)
+      : this.createFailedGreenPhaseResponse(task, testResult);
+  }
+
+  /**
+   * Initialize the green phase by running initial tests
+   */
+  private async initializeGreenPhase(task: Task, context: TaskExecutionContext, gitManager: GitManager, trackDir: string): Promise<any> {
+    return await gitManager.runTestSuite();
+  }
+
+  /**
+   * Handle initial implementation attempt if tests don't pass
+   */
+  private async handleImplementationAttempt(task: Task, context: TaskExecutionContext, gitManager: GitManager, trackDir: string): Promise<any> {
+    await this.performImplementation(task, trackDir, context.activeSkills || []);
+    return await gitManager.runTestSuite();
+  }
+
+  /**
+   * Handle debugging attempts when implementation doesn't pass tests
+   */
+  private async handleDebuggingAttempts(task: Task, context: TaskExecutionContext, gitManager: GitManager, trackDir: string): Promise<any> {
+    let attempts = 0;
+    const maxAttempts = 2;
+
+    let testResult = await gitManager.runTestSuite();
+
     while (!testResult.success && attempts < maxAttempts) {
       attempts++;
 
-      // Attempt to debug and fix the issue
       const debugResult = await this.attemptDebugAndFix(task, trackDir, context, attempts);
-
       if (!debugResult.success) {
-        // If debugging failed, return the error
-        return {
-          success: false,
-          message: `[GREEN PHASE DEBUG FAILED] **${task.description}**\n\nDebug attempt ${attempts} failed:\n${debugResult.message}`
-        };
+        return this.createDebugFailureResult(task, debugResult, attempts);
       }
 
-      // Run tests again after debug fix
       testResult = await gitManager.runTestSuite();
-
       if (testResult.success) {
-        // If tests pass after debugging, break the loop
         break;
       }
     }
 
-    context.testResults = {
+    return testResult;
+  }
+
+  /**
+   * Create failure result for debugging attempt
+   */
+  private createDebugFailureResult(task: Task, debugResult: any, attempts: number): any {
+    return {
+      success: false,
+      message: `[GREEN PHASE DEBUG FAILED] **${task.description}**\n\nDebug attempt ${attempts} failed:\n${debugResult.message}`
+    };
+  }
+
+  /**
+   * Create the test result context
+   */
+  private createTestResultContext(testResult: any) {
+    return {
       passed: testResult.success,
       output: testResult.message,
       errors: testResult.success ? undefined : [testResult.message]
     };
+  }
 
-    if (testResult.success) {
-      context.implementationStatus = 'completed';
-      return {
-        success: true,
-        message: `[GREEN PHASE] **${task.description}**\n\nImplementation completed successfully:\n- Functionality implemented\n- All tests are now passing\n\nReady to move to Refactor phase.`
-      };
-    } else {
-      // Maximum attempts reached, need user intervention
-      return {
-        success: false,
-        message: `[GREEN PHASE FAILED] **${task.description}**\n\nImplementation did not satisfy tests after ${maxAttempts} automatic correction attempts.\n\n**PARA TUDO!** Need user assistance to resolve this issue:\n${testResult.message}`,
-        questions: [
-          {
-            header: "User Assistance Required",
-            question: "Please provide guidance on how to fix the implementation for this task:",
-            type: "text",
-            required: true
-          }
-        ]
-      };
-    }
+  /**
+   * Create successful green phase response
+   */
+  private createSuccessfulGreenPhaseResponse(task: Task): CommandResult {
+    return {
+      success: true,
+      message: `[GREEN PHASE] **${task.description}**\n\nImplementation completed successfully:\n- Functionality implemented\n- All tests are now passing\n\nReady to move to Refactor phase.`
+    };
+  }
+
+  /**
+   * Create failed green phase response
+   */
+  private createFailedGreenPhaseResponse(task: Task, testResult: any): CommandResult {
+    return {
+      success: false,
+      message: `[GREEN PHASE FAILED] **${task.description}**\n\nImplementation did not satisfy tests after 2 automatic correction attempts.\n\n**PARA TUDO!** Need user assistance to resolve this issue:\n${testResult.message}`,
+      questions: [
+        {
+          header: "User Assistance Required",
+          question: "Please provide guidance on how to fix the implementation for this task:",
+          type: "text",
+          required: true
+        }
+      ]
+    };
   }
 
   /**
@@ -628,20 +670,27 @@ export function implementTask() {
         '- [~] $2'
       );
     } else if (status === 'completed') {
-      if (commitHash) {
-        // Replace with completed status and add commit hash
-        return planContent.replace(
-          new RegExp(`(- \\[[ ~]\\])\\s*([^\\n]*${taskId}|[^\\n]*${this.escapeRegExp(taskDescription)})(\\s*\\[commit:[a-f0-9]+\\])?`, 'i'),
-          `- [x] $2 [commit:${commitHash}]`
-        );
-      } else {
-        return planContent.replace(
-          new RegExp(`(- \\[[ ~]\\])\\s*([^\\n]*${taskId}|[^\\n]*${this.escapeRegExp(taskDescription)})`, 'i'),
-          '- [x] $2'
-        );
-      }
+      return this.updateCompletedTaskStatus(planContent, taskId, taskDescription, commitHash);
     }
     return planContent;
+  }
+
+  /**
+   * Update completed task status with optional commit hash
+   */
+  private updateCompletedTaskStatus(planContent: string, taskId: string, taskDescription: string, commitHash?: string): string {
+    if (commitHash) {
+      // Replace with completed status and add commit hash
+      return planContent.replace(
+        new RegExp(`(- \\[[ ~]\\])\\s*([^\\n]*${taskId}|[^\\n]*${this.escapeRegExp(taskDescription)})(\\s*\\[commit:[a-f0-9]+\\])?`, 'i'),
+        `- [x] $2 [commit:${commitHash}]`
+      );
+    } else {
+      return planContent.replace(
+        new RegExp(`(- \\[[ ~]\\])\\s*([^\\n]*${taskId}|[^\\n]*${this.escapeRegExp(taskDescription)})`, 'i'),
+        '- [x] $2'
+      );
+    }
   }
 
   /**
@@ -654,20 +703,27 @@ export function implementTask() {
         '- [~] $1'
       );
     } else if (status === 'completed') {
-      if (commitHash) {
-        // Replace with completed status and add commit hash
-        return planContent.replace(
-          new RegExp(`(- \\[[ ~]\\])\\s*(${this.escapeRegExp(taskDescription)})(\\s*\\[commit:[a-f0-9]+\\])?`, 'i'),
-          `- [x] $2 [commit:${commitHash}]`
-        );
-      } else {
-        return planContent.replace(
-          new RegExp(`(- \\[[ ~]\\])\\s*${this.escapeRegExp(taskDescription)}`, 'i'),
-          '- [x] $1'
-        );
-      }
+      return this.updateCompletedTaskByDescription(planContent, taskDescription, commitHash);
     }
     return planContent;
+  }
+
+  /**
+   * Update completed task status by description with optional commit hash
+   */
+  private updateCompletedTaskByDescription(planContent: string, taskDescription: string, commitHash?: string): string {
+    if (commitHash) {
+      // Replace with completed status and add commit hash
+      return planContent.replace(
+        new RegExp(`(- \\[[ ~]\\])\\s*(${this.escapeRegExp(taskDescription)})(\\s*\\[commit:[a-f0-9]+\\])?`, 'i'),
+        `- [x] $2 [commit:${commitHash}]`
+      );
+    } else {
+      return planContent.replace(
+        new RegExp(`(- \\[[ ~]\\])\\s*${this.escapeRegExp(taskDescription)}`, 'i'),
+        '- [x] $1'
+      );
+    }
   }
 
   /**
@@ -999,7 +1055,3 @@ export function implementTask() {
   }
 }
 
-// Helper function to escape special regex characters
-function escapeRegExp(string: string): string {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
