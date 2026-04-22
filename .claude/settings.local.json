@@ -25,5 +25,6 @@
       "Bash(findstr /S /I \"verifyProcessIntegrity\" d:\\\\specskills\\\\*.ts d:\\\\specskills\\\\*.js)",
       "Bash(findstr /S /I \"TODO FIXME BUG HACK XXX NOTE\" d:\\\\specskills\\\\src\\\\*.ts)"
     ]
-  }
+  },
+  "outputStyle": "Explanatory"
 }

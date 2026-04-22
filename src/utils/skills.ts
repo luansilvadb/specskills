@@ -356,9 +356,10 @@ function resetOtherFlags(state: any, keepFlag: string): void {
  * Internal utility to tokenize text for relevance scoring
  */
 function tokenize(text: string): string[] {
+  if (!text) return [];
   return text
     .toLowerCase()
-    .replace(/[^\w\s\u00C0-\u00FF]/g, ' ') // Support Portuguese
+    .replace(/[^\w\sÀ-ÿ]/g, ' ') // Support Portuguese
     .split(/\s+/)
     .filter(word => word.length > 1); // Keep technical terms (UI, DB, AI, JS)
 }
@@ -368,7 +369,7 @@ function tokenize(text: string): string[] {
  */
 function calculateRelevance(skill: Skill, trackTokens: string[], productTokens: string[], techTokens: string[]): number {
   let score = 0;
-  
+
   // Weights for different sections
   const WEIGHTS = {
     TITLE: 20,
@@ -444,9 +445,9 @@ export function getRecommendedSkills(contextDescription: string, allSkills: Skil
     };
   });
 
-  // Filter skills with score > 1.5 (lowered threshold to accommodate semantic matching)
+  // Filter skills with score > 0.5 (standard threshold for keyword matching)
   return combinedScores
-    .filter(item => item.score > 1.5)
+    .filter(item => item.score > 0.5)
     .sort((a, b) => b.score - a.score);
 }
 
@@ -474,6 +475,7 @@ function calculateSemanticRelevance(contextDescription: string, allSkills: Skill
  * Extract the main task or goal from the context
  */
 function extractTaskSegment(context: string): string {
+  if (!context) return '';
   // Match common action words followed by the main goal
   const taskRegex = /(criar|fazer|desenvolver|implementar|construir|montar|desenhar|fazer\s+um\s+clone\s+de|criar\s+um\s+jogo\s+de|construir\s+um\s+sistema\s+de)/i;
   const goalRegex = /(jogo|aplicativo|sistema|clone|pagina|tela|interface|app|web\s+app|site|programa|software)/i;
@@ -498,6 +500,7 @@ function extractTaskSegment(context: string): string {
  * Extract technology-related keywords from context
  */
 function extractTechnologySegment(context: string): string {
+  if (!context) return '';
   // Match technology terms
   const techTerms = [
     'html', 'css', 'js', 'javascript', 'three', 'threejs', 'three\\.js',
@@ -521,6 +524,7 @@ function extractTechnologySegment(context: string): string {
  * Extract requirement keywords from context
  */
 function extractRequirementsSegment(context: string): string {
+  if (!context) return '';
   const requirementKeywords = [
     'simples', 'básico', 'avançado', 'responsivo', 'performático', 'seguro',
     'escalável', 'rápido', 'limpo', 'bom', 'ótimo', 'melhor', 'eficiente',
@@ -535,6 +539,7 @@ function extractRequirementsSegment(context: string): string {
  * Extract constraint keywords from context
  */
 function extractConstraintsSegment(context: string): string {
+  if (!context) return '';
   const constraintKeywords = [
     'simples', 'fácil', 'rápido', 'barato', 'pequeno', 'leve', 'básico',
     'sem complexidade', 'não muito difícil', 'apenas funcional',
@@ -565,7 +570,7 @@ function calculateDeepSemanticRelevance(skill: Skill, segments: any): number {
  * Calculate domain relevance score
  */
 function calculateDomainScore(segments: any, skill: Skill): number {
-  if (segments.task.includes('jogo') && skill.domain.toLowerCase().includes('frontend')) {
+  if (segments.task && segments.task.includes('jogo') && skill.domain.toLowerCase().includes('frontend')) {
     return 20;
   }
   return 0;
@@ -575,6 +580,9 @@ function calculateDomainScore(segments: any, skill: Skill): number {
  * Calculate technology matching score
  */
 function calculateTechnologyScore(segments: any, skill: Skill): number {
+  if (!skill.techAffinity || !segments.technology) {
+    return 0;
+  }
   const techMatches = skill.techAffinity.filter(tech =>
     segments.technology.toLowerCase().includes(tech.toLowerCase())
   ).length;
@@ -585,17 +593,16 @@ function calculateTechnologyScore(segments: any, skill: Skill): number {
  * Calculate semantic matching score with purpose
  */
 function calculatePurposeScore(segments: any, skill: Skill): number {
-  if (skill.purpose) {
-    const purposeScore = calculateTextSimilarity(segments.task + ' ' + segments.requirements, skill.purpose.toLowerCase());
-    return purposeScore * 15;
-  }
-  return 0;
+  if (!skill.purpose || !segments.task || !segments.requirements) return 0;
+  const purposeScore = calculateTextSimilarity(segments.task + ' ' + segments.requirements, skill.purpose.toLowerCase());
+  return purposeScore * 15;
 }
 
 /**
  * Calculate semantic matching score with title
  */
 function calculateTitleScore(segments: any, skill: Skill): number {
+  if (!segments.task || !skill.title) return 0;
   const titleScore = calculateTextSimilarity(segments.task, skill.title.toLowerCase());
   return titleScore * 10;
 }
@@ -604,11 +611,13 @@ function calculateTitleScore(segments: any, skill: Skill): number {
  * Calculate semantic matching score with keywords
  */
 function calculateKeywordScore(segments: any, skill: Skill): number {
+  if (!segments.task && !segments.requirements) return 0;
+  if (!skill.keywords) return 0;
   const keywordMatches = skill.keywords.filter(keyword => {
     // Check for partial matches and related terms
     const keywordLower = keyword.toLowerCase();
-    return segments.task.includes(keywordLower) ||
-           segments.requirements.includes(keywordLower) ||
+    return (segments.task && segments.task.includes(keywordLower)) ||
+           (segments.requirements && segments.requirements.includes(keywordLower)) ||
            calculateTextSimilarity(segments.task, keywordLower) > 0.3;
   }).length;
 
@@ -619,12 +628,16 @@ function calculateKeywordScore(segments: any, skill: Skill): number {
  * Calculate boost for frontend skills when HTML/CSS/JS mentioned
  */
 function calculateFrontendBoostScore(segments: any, skill: Skill): number {
-  const hasFrontendTech = segments.technology.includes('html') ||
-                          segments.technology.includes('css') ||
-                          segments.technology.includes('js');
+  const hasFrontendTech = segments.technology && (
+    segments.technology.includes('html') ||
+    segments.technology.includes('css') ||
+    segments.technology.includes('js')
+  );
 
-  const isFrontendSkill = skill.domain.toLowerCase().includes('frontend') ||
-                         skill.techAffinity.some(tech => ['html', 'css', 'javascript'].includes(tech.toLowerCase()));
+  const isFrontendSkill = skill.domain && skill.techAffinity && (
+    skill.domain.toLowerCase().includes('frontend') ||
+    skill.techAffinity.some(tech => ['html', 'css', 'javascript'].includes(tech.toLowerCase()))
+  );
 
   if (hasFrontendTech && isFrontendSkill) {
     return 15;
