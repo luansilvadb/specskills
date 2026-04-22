@@ -16,7 +16,8 @@ import {
   readAndParseTracks,
   selectTrack,
   validateTrackStructure,
-  readAndParseTrackPlan
+  readAndParseTrackPlan,
+  updateTrackStatusInIndex
 } from './implement.helpers';
 
 // Helper function to generate implementation guidance message
@@ -210,7 +211,7 @@ function createTaskForExecution(task: any): any {
 }
 
 // Helper function to handle task execution
-async function executeCurrentTask(selectedTrack: any, tasks: any[], conductorDir: string): Promise<CommandResult> {
+async function executeCurrentTask(selectedTrack: any, tasks: any[], conductorDir: string, activeSkills: any[] = []): Promise<CommandResult> {
   const currentTask = selectCurrentTask(tasks);
 
   if (!currentTask) {
@@ -226,7 +227,7 @@ async function executeCurrentTask(selectedTrack: any, tasks: any[], conductorDir
 
   // Execute the current task atomically
   const taskForExecution = createTaskForExecution(currentTask);
-  const result = await taskManager.executeTaskAtomically(taskForExecution, trackDir);
+  const result = await taskManager.executeTaskAtomically(taskForExecution, trackDir, activeSkills);
 
   return result;
 }
@@ -244,7 +245,7 @@ function createTasksForVerification(tasks: any[]): any[] {
 }
 
 // Helper function to handle phase verification
-async function verifyPhase(selectedTrack: any, tasks: any[], conductorDir: string, context: CommandContext): Promise<CommandResult> {
+async function verifyPhase(selectedTrack: any, tasks: any[], conductorDir: string, context: CommandContext, activeSkills: any[] = []): Promise<CommandResult> {
   const tasksForVerification = createTasksForVerification(tasks);
 
   // Check if context.data contains information about the phase to verify
@@ -255,7 +256,7 @@ async function verifyPhase(selectedTrack: any, tasks: any[], conductorDir: strin
   const trackDir = path.join(conductorDir, selectedTrack.folderPath);
 
   // Verify phase completion
-  const result = await taskManager.verifyPhaseCompletion(tasksForVerification, phaseName, trackDir);
+  const result = await taskManager.verifyPhaseCompletion(tasksForVerification, phaseName, trackDir, activeSkills);
 
   return result;
 }
@@ -294,7 +295,7 @@ async function handleTaskExecution(context: CommandContext, args: string[]): Pro
   }
 
   // Execute the current task
-  return await executeCurrentTask(selectedTrack, tasks, conductorDir);
+  return await executeCurrentTask(selectedTrack, tasks, conductorDir, activeSkills);
 }
 
 // Helper function to handle phase verification
@@ -331,7 +332,7 @@ async function handlePhaseVerification(context: CommandContext, args: string[]):
   }
 
   // Verify the phase
-  return await verifyPhase(selectedTrack, tasks, conductorDir, context);
+  return await verifyPhase(selectedTrack, tasks, conductorDir, context, activeSkills);
 }
 
 // Helper function to validate setup
@@ -404,46 +405,6 @@ function checkProcessIntegrity(conductorDir: string, selectedTrack: any): Comman
   return null;
 }
 
-// Helper function to handle track completion
-function handleTrackCompletion(tasks: any[]): { completed: boolean; result: CommandResult | null } {
-  const pendingTasks = tasks.filter(t => t.status === 'pending');
-  const currentTask = tasks.find(t => t.status === 'in_progress');
-
-  // Completion Logic (Protocol 4.0 & 5.0)
-  if (pendingTasks.length === 0 && !currentTask) {
-    return {
-      completed: true,
-      result: {
-        success: true,
-        message: `[SUCCESS] **Track Implementation Complete**\n\nI will now initiate the **Synchronization Protocol (4.0)** and **Cleanup (5.0)**.\n\n**O Agente deve agora:**\n1. Comparar as alterações implementadas com o \`spec.md\`.\n2. Propor atualizações para \`product.md\`, \`tech-stack.md\` e \`product-guidelines.md\`.\n3. Após aprovação, atualizar o \`index.md\` e decidir o destino desta track.`,
-        questions: [
-          {
-            header: "Sync Docs",
-            question: "Should I analyze the specification and propose updates to `product.md` and `tech-stack.md`?",
-            type: "yesno"
-          },
-          {
-            header: "Cleanup",
-            question: "What should I do with this track folder?",
-            type: "choice",
-            options: [
-              { label: "Archive", description: "Move to conductor/archive/" },
-              { label: "Delete", description: "Permanently remove track" },
-              { label: "Keep", description: "Leave it in the tracks list" }
-            ]
-          }
-        ],
-        data: {
-          trackId: path.basename(tasks[0]?.folderPath || 'unknown'),
-          canSync: true,
-          protocol: '4.0'
-        }
-      }
-    };
-  }
-
-  return { completed: false, result: null };
-}
 
 export const implementCommand: SlashCommand = {
   name: 'implement',
@@ -521,13 +482,55 @@ export const implementCommand: SlashCommand = {
       }
 
       // Handle track completion if applicable
-      const { completed, result: completionResult } = handleTrackCompletion(tasks);
+      const { completed, result: completionResult } = (() => {
+        const pendingTasks = tasks.filter(t => t.status === 'pending');
+        const currentTask = tasks.find(t => t.status === 'in_progress');
+
+        // Completion Logic (Protocol 4.0 & 5.0)
+        if (pendingTasks.length === 0 && !currentTask) {
+          return {
+            completed: true,
+            result: {
+              success: true,
+              message: `[SUCCESS] **Track Implementation Complete**\n\nI will now initiate the **Synchronization Protocol (4.0)** and **Cleanup (5.0)**.\n\n**O Agente deve agora:**\n1. Comparar as alterações implementadas com o \`spec.md\`.\n2. Propor atualizações para \`product.md\`, \`tech-stack.md\` e \`product-guidelines.md\`.\n3. Após aprovação, atualizar o \`index.md\` e decidir o destino desta track.`,
+              questions: [
+                {
+                  header: "Sync Docs",
+                  question: "Should I analyze the specification and propose updates to `product.md` and `tech-stack.md`?",
+                  type: "yesno" as const
+                },
+                {
+                  header: "Cleanup",
+                  question: "What should I do with this track folder?",
+                  type: "choice" as const,
+                  options: [
+                    { label: "Archive", description: "Move to conductor/archive/" },
+                    { label: "Delete", description: "Permanently remove track" },
+                    { label: "Keep", description: "Leave it in the tracks list" }
+                  ]
+                }
+              ],
+              data: {
+                trackId: path.basename(selectedTrack.folderPath),
+                canSync: true,
+                protocol: '4.0',
+                syncAction: 'analyze_docs'
+              }
+            }
+          };
+        }
+
+        return { completed: false, result: null };
+      })();
       if (completed) {
         return completionResult!;
       }
 
       // Generate implementation guidance
       const message = generateImplementationGuidance(selectedTrack, tasks, activeSkills, conductorDir, trackPath);
+
+      // Update track status in main index.md to [~] (in progress)
+      await updateTrackStatusInIndex(conductorDir, selectedTrack.description, 'in_progress');
 
       return {
         success: true,

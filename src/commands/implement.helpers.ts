@@ -3,10 +3,11 @@ import type { CommandResult } from '../types';
 import {
   fileExists,
   readFile,
-  resolveConductorDir,
+  writeFile,
 } from '../utils/fileSystem';
-import { parseTracksIndex, parsePlanTasks } from '../utils/markdown';
+import { parseTracksIndex, parsePlanTasks, updateTrackStatus } from '../utils/markdown';
 import { loadAllSkills, findActiveSkills } from '../utils/skills';
+import { analyzeAndSyncDocumentation, applyDocumentationUpdates } from '../utils/docSync';
 
 // Helper function to validate project setup
 export function validateProjectSetup(conductorDir: string): CommandResult | null {
@@ -219,8 +220,40 @@ export function readAndParseTrackPlan(trackDir: string, selectedTrack: any, cond
   return { planContent, activeSkills, tasks, result: null };
 }
 
+// Helper function to update track status in the main index.md file
+export async function updateTrackStatusInIndex(conductorDir: string, trackDescription: string, newStatus: 'pending' | 'in_progress' | 'completed'): Promise<void> {
+  const indexPath = path.join(conductorDir, 'index.md');
+  let content = readFile(indexPath);
+
+  if (!content) {
+    console.error(`Index file not found at ${indexPath}`);
+    return;
+  }
+
+  // Determine the status character to use
+  const statusChar = newStatus === 'completed' ? 'x' :
+                     newStatus === 'in_progress' ? '~' : ' ';
+
+  // Escape special regex characters in the track description
+  const escapedDescription = trackDescription.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // Pattern to match the format: - [ ] **Track: description**
+  // We need to account for the colon and space after 'Track'
+  const pattern = new RegExp(
+    `(-\\s*\\[)(?:\\s|~|x)(\\]\\s*\\*\\*Track:\\s*${escapedDescription}\\*\\*)`,
+    'g'
+  );
+
+  // Replace the status character in the matched pattern
+  const updatedContent = content.replace(pattern, `$1${statusChar}$2`);
+
+  if (updatedContent !== content) {
+    writeFile(indexPath, updatedContent);
+  }
+}
+
 // Helper function to handle track completion logic
-export function handleTrackCompletion(selectedTrack: any, tasks: any[]): { completed: boolean, result: CommandResult | null } {
+export function handleTrackCompletion(selectedTrack: any, tasks: any[], _trackDir: string, _conductorDir: string): { completed: boolean, result: CommandResult | null } {
   const pendingTasks = tasks.filter(t => t.status === 'pending');
   const currentTask = tasks.find(t => t.status === 'in_progress');
 
@@ -251,13 +284,73 @@ export function handleTrackCompletion(selectedTrack: any, tasks: any[]): { compl
         data: {
           trackId: path.basename(selectedTrack.folderPath),
           canSync: true,
-          protocol: '4.0'
+          protocol: '4.0',
+          syncAction: 'analyze_docs'
         }
       }
     };
   }
 
   return { completed: false, result: null };
+}
+
+/**
+ * Handle user response to track cleanup options
+ */
+export async function handleTrackCleanupResponse(
+  response: string,
+  conductorDir: string,
+  trackId: string
+): Promise<CommandResult> {
+  const { TrackCleanupProtocol, CleanupAction } = await import('../utils/trackCleanup');
+
+  let action: CleanupAction;
+
+  if (response.toLowerCase().includes('archive')) {
+    action = CleanupAction.ARCHIVE;
+  } else if (response.toLowerCase().includes('delete')) {
+    action = CleanupAction.DELETE;
+  } else if (response.toLowerCase().includes('keep') || response.toLowerCase().includes('skip')) {
+    action = CleanupAction.KEEP;
+  } else {
+    // Default to keep if no clear option is identified
+    action = CleanupAction.KEEP;
+  }
+
+  // Prepare cleanup options
+  const cleanupOptions = {
+    action,
+    trackId,
+    archiveLocation: path.join(conductorDir, 'archive')
+  };
+
+  // Execute cleanup action
+  const context = { projectRoot: conductorDir, args: [], data: {} } as any; // Mock context
+  const result = await TrackCleanupProtocol.executeCleanup(context, cleanupOptions);
+
+  // Update the main index to reflect cleanup action
+  if (result.success) {
+    await TrackCleanupProtocol.updateTracksIndex(context, trackId, action);
+
+    // Return appropriate message based on action taken
+    let finalMessage = result.message;
+    if (action === CleanupAction.ARCHIVE) {
+      finalMessage += `\n\n✅ The track has been archived and the index has been updated. The process is complete.`;
+    } else if (action === CleanupAction.DELETE) {
+      finalMessage += `\n\n🗑️ The track has been permanently deleted and the index has been updated. The process is complete.`;
+    } else if (action === CleanupAction.KEEP) {
+      finalMessage += `\n\n📁 The track has been kept in the tracks directory. The process is complete.`;
+    }
+
+    finalMessage += `\n\nYou can now run \`/newTrack\` to start the next feature!`;
+
+    return {
+      success: true,
+      message: finalMessage
+    };
+  }
+
+  return result;
 }
 
 /**

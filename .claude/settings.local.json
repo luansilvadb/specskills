@@ -20,7 +20,8 @@
       "Bash(git push *)",
       "Bash(git remote *)",
       "Bash(grep -n \"//\" d:\\\\specskills\\\\src\\\\commands\\\\implement.ts)",
-      "Bash(powershell -Command \"Select-String -Path 'd:\\\\specskills\\\\src\\\\commands\\\\implement.helpers.ts' -Pattern 'validateSetup|validateTrackSelection'\")"
+      "Bash(powershell -Command \"Select-String -Path 'd:\\\\specskills\\\\src\\\\commands\\\\implement.helpers.ts' -Pattern 'validateSetup|validateTrackSelection'\")",
+      "Bash(node -e ' *)"
     ]
   }
 }

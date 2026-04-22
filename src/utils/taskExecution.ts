@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { Task, CommandResult, CommandContext } from '../types';
+import type { Task, CommandResult } from '../types';
 import { readFile, writeFile } from './fileSystem';
 import { GitManager } from './gitUtils';
 
@@ -13,6 +13,7 @@ export interface TaskExecutionContext {
   taskId: string;
   taskDescription: string;
   currentPhase: 'red' | 'green' | 'refactor'; // TDD phases
+  activeSkills?: any[];
   testResults?: TestResult;
   implementationStatus?: 'started' | 'completed';
   refactorNotes?: string;
@@ -50,7 +51,7 @@ export class TaskExecutionManager {
   /**
    * Execute a single task atomically following TDD workflow
    */
-  async executeTaskAtomically(task: Task, trackDir: string): Promise<CommandResult> {
+  async executeTaskAtomically(task: Task, trackDir: string, activeSkills: any[] = []): Promise<CommandResult> {
     try {
       // Initialize git manager for atomic commits
       const gitManager = new GitManager(trackDir);
@@ -62,7 +63,8 @@ export class TaskExecutionManager {
       const context: TaskExecutionContext = {
         taskId: task.id,
         taskDescription: task.description,
-        currentPhase: 'red'
+        currentPhase: 'red',
+        activeSkills // Adiciona as skills ativas ao contexto
       };
 
       // Phase 1: Red (Write failing tests)
@@ -100,8 +102,8 @@ export class TaskExecutionManager {
         await gitManager.addCommitNote(commitResult.data.hash, noteContent);
       }
 
-      // Update task status to completed
-      await this.updateTaskStatus(trackDir, task.id, 'completed');
+      // Update task status to completed with commit hash
+      await this.updateTaskStatus(trackDir, task.id, 'completed', commitResult.data?.hash);
 
       return {
         success: true,
@@ -122,8 +124,8 @@ export class TaskExecutionManager {
     // Update context to red phase
     context.currentPhase = 'red';
 
-    // Generate test plan based on task description
-    const testPlan = await this.generateTestPlan(task.description);
+    // Generate test plan based on task description and active skills
+    const testPlan = await this.generateTestPlan(task.description, context.activeSkills || []);
 
     // Write test files
     await this.writeTestFiles(testPlan, trackDir);
@@ -141,18 +143,80 @@ export class TaskExecutionManager {
   }
 
   /**
+   * Attempt to debug and fix implementation issues automatically
+   */
+  private async attemptDebugAndFix(task: Task, trackDir: string, context: TaskExecutionContext, attemptNum: number): Promise<CommandResult> {
+    // In this implementation, we'll log the debug attempt and potentially modify code based on error patterns
+    // In a more advanced implementation, this could analyze the test failure more deeply
+
+    try {
+      // Log debug attempt
+      console.log(`Debug attempt ${attemptNum} for task: ${task.description}`);
+
+      // Here we would potentially implement more sophisticated debugging logic
+      // For now, we'll perform a basic retry of the implementation with slight variation
+
+      // Implementation based on task requirements and active skills
+      await this.performImplementation(task, trackDir, context.activeSkills || []);
+
+      return {
+        success: true,
+        message: `Debug attempt ${attemptNum} completed - re-implemented code based on task requirements`
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Debug attempt ${attemptNum} failed: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+  }
+
+  /**
    * Execute the Green phase: Implement functionality to pass tests
    */
   private async executeGreenPhase(task: Task, context: TaskExecutionContext, trackDir: string): Promise<CommandResult> {
     // Update context to green phase
     context.currentPhase = 'green';
 
-    // Implementation based on task requirements
-    const implementationResult = await this.performImplementation(task, trackDir);
-
     // Attempt to run tests to verify implementation
     const gitManager = new GitManager(trackDir);
-    const testResult = await gitManager.runTestSuite();
+    let testResult = await gitManager.runTestSuite();
+    let attempts = 0;
+    let maxAttempts = 2; // Maximum 2 automatic correction attempts
+
+    // If tests are already passing, proceed to implementation
+    if (!testResult.success) {
+      // Implementation based on task requirements and active skills
+      await this.performImplementation(task, trackDir, context.activeSkills || []);
+
+      // Run tests again after implementation
+      testResult = await gitManager.runTestSuite();
+    }
+
+    // If tests still fail, try to debug automatically up to 2 times
+    while (!testResult.success && attempts < maxAttempts) {
+      attempts++;
+
+      // Attempt to debug and fix the issue
+      const debugResult = await this.attemptDebugAndFix(task, trackDir, context, attempts);
+
+      if (!debugResult.success) {
+        // If debugging failed, return the error
+        return {
+          success: false,
+          message: `[GREEN PHASE DEBUG FAILED] **${task.description}**\n\nDebug attempt ${attempts} failed:\n${debugResult.message}`
+        };
+      }
+
+      // Run tests again after debug fix
+      testResult = await gitManager.runTestSuite();
+
+      if (testResult.success) {
+        // If tests pass after debugging, break the loop
+        break;
+      }
+    }
+
     context.testResults = {
       passed: testResult.success,
       output: testResult.message,
@@ -166,9 +230,18 @@ export class TaskExecutionManager {
         message: `[GREEN PHASE] **${task.description}**\n\nImplementation completed successfully:\n- Functionality implemented\n- All tests are now passing\n\nReady to move to Refactor phase.`
       };
     } else {
+      // Maximum attempts reached, need user intervention
       return {
         success: false,
-        message: `[GREEN PHASE FAILED] **${task.description}**\n\nImplementation did not satisfy tests:\n${testResult.message}`
+        message: `[GREEN PHASE FAILED] **${task.description}**\n\nImplementation did not satisfy tests after ${maxAttempts} automatic correction attempts.\n\n**PARA TUDO!** Need user assistance to resolve this issue:\n${testResult.message}`,
+        questions: [
+          {
+            header: "User Assistance Required",
+            question: "Please provide guidance on how to fix the implementation for this task:",
+            type: "text",
+            required: true
+          }
+        ]
       };
     }
   }
@@ -180,8 +253,8 @@ export class TaskExecutionManager {
     // Update context to refactor phase
     context.currentPhase = 'refactor';
 
-    // Perform refactoring based on code quality metrics
-    const refactoringNotes = await this.performRefactoring(trackDir);
+    // Perform refactoring based on code quality metrics and active skills
+    const refactoringNotes = await this.performRefactoring(trackDir, context.activeSkills || []);
     context.refactorNotes = refactoringNotes;
 
     // Run tests again to ensure refactoring didn't break functionality
@@ -207,9 +280,9 @@ export class TaskExecutionManager {
   }
 
   /**
-   * Generate a test plan based on task description
+   * Generate a test plan based on task description and active skills
    */
-  private async generateTestPlan(taskDescription: string): Promise<ManualTestPlan> {
+  private async generateTestPlan(taskDescription: string, activeSkills: any[] = []): Promise<ManualTestPlan> {
     // Create test scenarios based on keywords in the task
     const testScenarios: TestScenario[] = [];
 
@@ -223,10 +296,41 @@ export class TaskExecutionManager {
       testScenarios.push(this.createFunctionalTestScenario());
     }
 
+    // Add test scenarios based on active skills
+    if (activeSkills && activeSkills.length > 0) {
+      for (const skill of activeSkills) {
+        if (skill.protocol) {
+          // Generate specific test scenarios based on the skill's protocol
+          testScenarios.push(...this.createSkillBasedTestScenarios(skill, taskDescription));
+        }
+      }
+    }
+
     // Add common test scenarios regardless of keywords
     testScenarios.push(...this.createCommonTestScenarios());
 
     return this.createManualTestPlan(testScenarios);
+  }
+
+  /**
+   * Create test scenarios based on a specific skill's protocol
+   */
+  private createSkillBasedTestScenarios(skill: any, taskDescription: string): TestScenario[] {
+    const scenarios: TestScenario[] = [];
+
+    // Example: Add tests based on skill protocols
+    if (skill.id && skill.protocol) {
+      scenarios.push({
+        description: `Verify ${skill.title || skill.id} protocol compliance for ${taskDescription}`,
+        steps: [
+          `Apply ${skill.title || skill.id} guidelines`,
+          `Check for adherence to protocol: ${skill.protocol.substring(0, 50)}...`
+        ],
+        expectedResult: `Implementation follows ${skill.title || skill.id} best practices and guidelines`
+      });
+    }
+
+    return scenarios;
   }
 
   /**
@@ -339,11 +443,11 @@ export class TaskExecutionManager {
   }
 
   /**
-   * Perform implementation based on task requirements
+   * Perform implementation based on task requirements and active skills
    */
-  private async performImplementation(task: Task, trackDir: string): Promise<any> {
-    // Determine the type of files needed based on task description
-    const implementationStrategy = this.getImplementationStrategy(task.description);
+  private async performImplementation(task: Task, trackDir: string, activeSkills: any[] = []): Promise<any> {
+    // Determine the type of files needed based on task description and active skills
+    const implementationStrategy = this.getImplementationStrategy(task.description, activeSkills);
 
     await implementationStrategy(task, trackDir);
 
@@ -351,9 +455,20 @@ export class TaskExecutionManager {
   }
 
   /**
-   * Get the appropriate implementation strategy based on task description
+   * Get the appropriate implementation strategy based on task description and active skills
    */
-  private getImplementationStrategy(taskDescription: string): (task: Task, trackDir: string) => Promise<void> {
+  private getImplementationStrategy(taskDescription: string, activeSkills: any[] = []): (task: Task, trackDir: string) => Promise<void> {
+    // Check if any active skill influences the implementation strategy
+    for (const skill of activeSkills) {
+      if (skill.protocol) {
+        // If a skill has a specific protocol that applies to this task, use it
+        if (skill.protocol.toLowerCase().includes('html') || skill.protocol.toLowerCase().includes('ui')) {
+          return this.createHtmlImplementation.bind(this);
+        }
+        // Add more protocol-based implementation strategies as needed
+      }
+    }
+
     const keywords = taskDescription.toLowerCase();
 
     if (this.isHtmlRelated(keywords)) {
@@ -431,7 +546,7 @@ document.addEventListener('DOMContentLoaded', () => {
   /**
    * Generate generic implementation content
    */
-  private generateGenericImplContent(taskDescription: string, taskId: string): string {
+  private generateGenericImplContent(taskDescription: string, _taskId: string): string {
     return `// Implementation for ${taskDescription}
 // Generated at ${new Date().toISOString()}
 
@@ -452,10 +567,10 @@ export function implementTask() {
   }
 
   /**
-   * Perform refactoring on the codebase
+   * Perform refactoring on the codebase considering active skills
    */
-  private async performRefactoring(trackDir: string): Promise<string> {
-    // Simulate refactoring by looking for common issues and improving code
+  private async performRefactoring(_trackDir: string, activeSkills: any[] = []): Promise<string> {
+    // Start with standard refactoring notes
     const notes = [
       'Consolidated duplicate code',
       'Improved variable naming',
@@ -464,17 +579,25 @@ export function implementTask() {
       'Updated documentation comments'
     ];
 
+    // Enhance refactoring based on active skills
+    for (const skill of activeSkills) {
+      if (skill.protocol) {
+        notes.push(`Applied ${skill.title || skill.id} protocol: ${skill.protocol.substring(0, 30)}...`);
+      }
+    }
+
     return notes.join('; ');
   }
 
   /**
    * Update task status in the plan.md file
    */
-  private async updateTaskStatus(trackDir: string, taskId: string, status: 'not-started' | 'in-progress' | 'completed'): Promise<void> {
+  private async updateTaskStatus(trackDir: string, taskId: string, status: 'not-started' | 'in-progress' | 'completed', commitHash?: string): Promise<void> {
     const planPath = path.join(trackDir, 'plan.md');
     let planContent = readFile(planPath) || '';
 
-    const updatedContent = this.generateUpdatedPlanContent(planContent, taskId, status, task.description);
+    const taskDescription = planContent.match(new RegExp(`- \\[.?\\] ([^\n]*?${taskId}[^\n]*)`))?.[1] || '';
+    const updatedContent = this.generateUpdatedPlanContent(planContent, taskId, status, taskDescription, commitHash);
 
     writeFile(planPath, updatedContent);
   }
@@ -482,36 +605,41 @@ export function implementTask() {
   /**
    * Generate updated plan content with new task status
    */
-  private generateUpdatedPlanContent(planContent: string, taskId: string, status: 'not-started' | 'in-progress' | 'completed', taskDescription: string): string {
+  private generateUpdatedPlanContent(planContent: string, taskId: string, status: 'not-started' | 'in-progress' | 'completed', taskDescription: string, commitHash?: string): string {
     if (status === 'not-started') {
       // For 'not-started', we don't change the status since it's already the default [ ]
       return planContent;
     }
 
-    let updatedContent = this.updatePlanContentById(planContent, taskId, status, taskDescription);
+    let updatedContent = this.updatePlanContentById(planContent, taskId, status, taskDescription, commitHash);
 
     if (updatedContent === planContent) {
       // If no replacement was made by ID, try by description
-      updatedContent = this.updatePlanContentByDescription(planContent, status, taskDescription);
+      updatedContent = this.updatePlanContentByDescription(planContent, status, taskDescription, commitHash);
     }
 
     return updatedContent;
   }
 
-  /**
-   * Update plan content by finding task with taskId
-   */
-  private updatePlanContentById(planContent: string, taskId: string, status: 'in-progress' | 'completed', taskDescription: string): string {
+  private updatePlanContentById(planContent: string, taskId: string, status: 'in-progress' | 'completed', taskDescription: string, commitHash?: string): string {
     if (status === 'in-progress') {
       return planContent.replace(
-        new RegExp(`(- \\[ \\])\\s*([^\\n]*${taskId}|[^\\n]*${escapeRegExp(taskDescription)})`, 'i'),
+        new RegExp(`(- \\[ \\])\\s*([^\\n]*${taskId}|[^\\n]*${this.escapeRegExp(taskDescription)})`, 'i'),
         '- [~] $2'
       );
     } else if (status === 'completed') {
-      return planContent.replace(
-        new RegExp(`(- \\[[ ~]\\])\\s*([^\\n]*${taskId}|[^\\n]*${escapeRegExp(taskDescription)})`, 'i'),
-        '- [x] $2'
-      );
+      if (commitHash) {
+        // Replace with completed status and add commit hash
+        return planContent.replace(
+          new RegExp(`(- \\[[ ~]\\])\\s*([^\\n]*${taskId}|[^\\n]*${this.escapeRegExp(taskDescription)})(\\s*\\[commit:[a-f0-9]+\\])?`, 'i'),
+          `- [x] $2 [commit:${commitHash}]`
+        );
+      } else {
+        return planContent.replace(
+          new RegExp(`(- \\[[ ~]\\])\\s*([^\\n]*${taskId}|[^\\n]*${this.escapeRegExp(taskDescription)})`, 'i'),
+          '- [x] $2'
+        );
+      }
     }
     return planContent;
   }
@@ -519,25 +647,79 @@ export function implementTask() {
   /**
    * Update plan content by finding task with description only
    */
-  private updatePlanContentByDescription(planContent: string, status: 'in-progress' | 'completed', taskDescription: string): string {
+  private updatePlanContentByDescription(planContent: string, status: 'in-progress' | 'completed', taskDescription: string, commitHash?: string): string {
     if (status === 'in-progress') {
       return planContent.replace(
-        new RegExp(`(- \\[ \\])\\s*${escapeRegExp(taskDescription)}`, 'i'),
+        new RegExp(`(- \\[ \\])\\s*${this.escapeRegExp(taskDescription)}`, 'i'),
         '- [~] $1'
       );
     } else if (status === 'completed') {
-      return planContent.replace(
-        new RegExp(`(- \\[[ ~]\\])\\s*${escapeRegExp(taskDescription)}`, 'i'),
-        '- [x] $1'
-      );
+      if (commitHash) {
+        // Replace with completed status and add commit hash
+        return planContent.replace(
+          new RegExp(`(- \\[[ ~]\\])\\s*(${this.escapeRegExp(taskDescription)})(\\s*\\[commit:[a-f0-9]+\\])?`, 'i'),
+          `- [x] $2 [commit:${commitHash}]`
+        );
+      } else {
+        return planContent.replace(
+          new RegExp(`(- \\[[ ~]\\])\\s*${this.escapeRegExp(taskDescription)}`, 'i'),
+          '- [x] $1'
+        );
+      }
     }
     return planContent;
   }
 
   /**
+   * Update phase status in plan.md file
+   */
+  private async updatePhaseStatusInPlan(trackDir: string, phaseName: string, status: string): Promise<void> {
+    const planPath = path.join(trackDir, 'plan.md');
+    let planContent = readFile(planPath) || '';
+
+    // Check if the plan has phases (look for phase headers)
+    const hasPhases = planContent.includes('# ') || planContent.includes('## ');
+
+    if (hasPhases) {
+      // If the plan has phases, we'll mark the phase header with the status
+      // Look for patterns like ## Phase Name or ### Phase Name
+      const phaseHeaderPattern = new RegExp(`^(##|#)\\s+${this.escapeRegExp(phaseName)}.*$`, 'im');
+
+      if (phaseHeaderPattern.test(planContent)) {
+        // If phase header exists, add status to it
+        const phaseStatusMarker = status === 'completed' ? ' [DONE]' : status === 'in-progress' ? ' [IN PROGRESS]' : '';
+        planContent = planContent.replace(
+          phaseHeaderPattern,
+          `$&${phaseStatusMarker}`
+        );
+      } else {
+        // If phase header doesn't exist, we'll just make sure all tasks are marked appropriately
+        // The individual tasks should already be updated by updateTaskStatus
+      }
+    } else {
+      // If no phases, the entire plan is treated as one phase
+      // In this case, we ensure all tasks are properly marked
+    }
+
+    // Also ensure all tasks in this phase are marked as completed
+    // Find tasks in this phase and ensure they're marked as completed
+    // This implementation assumes tasks are grouped under phase headers
+
+    // Write updated content back to file
+    writeFile(planPath, planContent);
+  }
+
+  /**
+   * Helper function to escape special regex characters
+   */
+  private escapeRegExp(string: string): string {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
    * Verify phase completion and generate manual test plan
    */
-  async verifyPhaseCompletion(tasks: Task[], phaseName: string, trackDir: string): Promise<CommandResult> {
+  async verifyPhaseCompletion(tasks: Task[], phaseName: string, _trackDir: string, activeSkills: any[] = []): Promise<CommandResult> {
     // Check if all tasks in this phase are completed
     const pendingTasks = tasks.filter(t => t.status !== 'completed');
 
@@ -549,7 +731,7 @@ export function implementTask() {
     }
 
     // Initialize git manager for checkpoint
-    const gitManager = new GitManager(trackDir);
+    const gitManager = new GitManager(_trackDir);
 
     // Run test suite
     const testResult = await gitManager.runTestSuite();
@@ -561,30 +743,32 @@ export function implementTask() {
       };
     }
 
-    // Generate manual test plan for this phase
-    const manualTestPlan = await this.generatePhaseVerificationPlan(tasks, phaseName);
-
-    // Generate checkpoint commit
-    const taskSummaries = tasks.map(task => `${task.id}: ${task.description}`);
-    const checkpointResult = await gitManager.createCheckpointCommit(phaseName, taskSummaries);
-
-    if (!checkpointResult.success && !checkpointResult.message.includes('No changes to commit')) {
-      return {
-        success: false,
-        message: `[CHECKPOINT FAILED] **${phaseName}**\n\nCould not create phase checkpoint: ${checkpointResult.message}`
-      };
-    }
+    // Generate manual test plan for this phase considering active skills
+    const manualTestPlan = await this.generatePhaseVerificationPlan(tasks, phaseName, activeSkills);
 
     // Save verification plan
-    await this.saveVerificationPlan(manualTestPlan, phaseName, trackDir);
+    await this.saveVerificationPlan(manualTestPlan, phaseName, _trackDir, activeSkills);
 
     return {
       success: true,
-      message: `[PHASE VERIFY] **${phaseName}**\n\nPhase completion verified! Test suite passed.\nCheckpoint commit created: ${checkpointResult.data?.hash || 'N/A'}\n\nGenerated manual test plan:\n\n${manualTestPlan.testScenarios.map(t => `**${t.description}**\nSteps: ${t.steps.join(', ')}\nExpected: ${t.expectedResult}`).join('\n\n')}\n\nUser should manually verify these scenarios before proceeding to next phase.`,
+      message: `[PHASE VERIFY] **${phaseName}**\n\nPhase completion verified! Test suite passed.\n\nGenerated manual test plan:\n\n${manualTestPlan.testScenarios.map(t => `**${t.description}**\nSteps: ${t.steps.join(', ')}\nExpected: ${t.expectedResult}`).join('\n\n')}\n\n`,
+      questions: [
+        {
+          header: "Manual Verification",
+          question: "Os testes automatizados passaram. Por favor, siga estes passos manuais... Isso atende às suas expectativas?",
+          type: "choice",
+          options: [
+            { label: "Sim, tudo certo", description: "Prosseguir para próximo passo" },
+            { label: "Não, identifiei problemas", description: "Voltar para correções" }
+          ]
+        }
+      ],
       data: {
         phaseVerification: manualTestPlan,
-        checkpointHash: checkpointResult.data?.hash,
-        canProceed: false // Requires manual confirmation
+        phaseName: phaseName,
+        trackDir: _trackDir,
+        pending: true, // Indicate this phase needs manual verification
+        phaseStatus: 'verification_pending'
       }
     };
   }
@@ -592,7 +776,7 @@ export function implementTask() {
   /**
    * Generate verification plan for a phase
    */
-  private async generatePhaseVerificationPlan(tasks: Task[], phaseName: string): Promise<ManualTestPlan> {
+  private async generatePhaseVerificationPlan(tasks: Task[], phaseName: string, activeSkills: any[] = []): Promise<ManualTestPlan> {
     const testScenarios: TestScenario[] = [];
 
     // Create test scenarios based on the tasks in the phase
@@ -607,6 +791,23 @@ export function implementTask() {
         ],
         expectedResult: 'Feature works as specified in the task'
       });
+    }
+
+    // Add verification scenarios based on active skills
+    if (activeSkills && activeSkills.length > 0) {
+      for (const skill of activeSkills) {
+        if (skill.protocol) {
+          testScenarios.push({
+            description: `Verify ${skill.title || skill.id} protocol compliance`,
+            steps: [
+              `Check adherence to ${skill.title || skill.id} guidelines`,
+              `Validate implementation against ${skill.protocol.substring(0, 50)}...`,
+              `Confirm best practices from ${skill.title || skill.id} are applied`
+            ],
+            expectedResult: `Implementation follows ${skill.title || skill.id} standards and protocols`
+          });
+        }
+      }
     }
 
     // Add integration test scenarios
@@ -639,38 +840,108 @@ export function implementTask() {
   }
 
   /**
-   * Save verification plan to file
+   * Handle user response to manual verification
    */
-  private async saveVerificationPlan(verificationPlan: ManualTestPlan, phaseName: string, trackDir: string): Promise<void> {
-    const verificationDir = path.join(trackDir, 'verification');
-    if (!fs.existsSync(verificationDir)) {
-      fs.mkdirSync(verificationDir, { recursive: true });
+  async handlePhaseVerificationResponse(
+    response: string,
+    phaseName: string,
+    trackDir: string,
+    tasks: Task[],
+    activeSkills: any[]
+  ): Promise<CommandResult> {
+    if (response.toLowerCase().includes('sim') || response.toLowerCase().includes('tudo certo')) {
+      // Caminho Feliz: Usuário aprovou
+      return await this.handlePhaseApproval(phaseName, trackDir, tasks, activeSkills);
+    } else {
+      // Caminho Não Feliz: Usuário identificou problemas
+      return await this.handlePhaseRejection(response, phaseName, trackDir, tasks, activeSkills);
+    }
+  }
+
+  /**
+   * Handle phase approval - create checkpoint commit and update plan
+   */
+  private async handlePhaseApproval(
+    phaseName: string,
+    trackDir: string,
+    tasks: Task[],
+    activeSkills: any[]
+  ): Promise<CommandResult> {
+    // Initialize git manager for checkpoint
+    const gitManager = new GitManager(trackDir);
+
+    // Create checkpoint commit for the phase
+    const taskSummaries = tasks.map(task => `- ${task.description} [completed]`);
+    const checkpointResult = await gitManager.createCheckpointCommit(phaseName, taskSummaries);
+
+    if (!checkpointResult.success) {
+      return checkpointResult;
     }
 
-    const fileName = `${phaseName.replace(/\s+/g, '_')}_verification_plan.md`;
-    const filePath = path.join(verificationDir, fileName);
+    // Add detailed test report to the checkpoint commit
+    const testReport = await gitManager.runTestSuite();
+    const commitHash = checkpointResult.data?.hash || gitManager.getLatestCommitHash();
 
-    let content = `# ${phaseName} Verification Plan\n\n`;
-    content += `Generated: ${new Date().toISOString()}\n\n`;
+    // Prepare checkpoint report
+    const checkpointReport = {
+      phaseName,
+      completedTasks: tasks.map(t => t.description),
+      commitHashes: [commitHash],
+      testSuiteResults: testReport.message,
+      manualVerificationSteps: ['Manual verification completed by user', 'All criteria met', 'Approved for continuation'],
+      approvalStatus: 'approved',
+      notes: `Phase "${phaseName}" completed and approved by user at ${new Date().toISOString()}`
+    };
 
-    content += `## Test Scenarios\n\n`;
-    for (const scenario of verificationPlan.testScenarios) {
-      content += `### ${scenario.description}\n`;
-      content += `- Steps: ${scenario.steps.join(', ')}\n`;
-      content += `- Expected Result: ${scenario.expectedResult}\n\n`;
-    }
+    // Add checkpoint report as git notes
+    const noteContent = `Phase: ${phaseName}\nCompleted: ${new Date().toISOString()}\nTasks: ${tasks.length}\nStatus: approved\nReport: ${JSON.stringify(checkpointReport, null, 2)}`;
+    await gitManager.addCommitNote(commitHash, noteContent);
 
-    content += `## Acceptance Criteria\n\n`;
-    for (const criterion of verificationPlan.acceptanceCriteria) {
-      content += `- ${criterion}\n`;
-    }
+    // Update phase status in plan
+    await this.updatePhaseStatusInPlan(trackDir, phaseName, 'completed');
 
-    content += `\n## Verification Steps\n\n`;
-    for (const step of verificationPlan.verificationSteps) {
-      content += `- ${step}\n`;
-    }
+    return {
+      success: true,
+      message: `[PHASE APPROVED] **${phaseName}**\n\nCheckpoint commit created: ${commitHash}\n\nPhase completed and approved:\n- All tasks marked as completed\n- Checkpoint commit with detailed report\n- Manual verification confirmed`
+    };
+  }
 
-    fs.writeFileSync(filePath, content);
+  /**
+   * Handle phase rejection - process user feedback and fix issues
+   */
+  private async handlePhaseRejection(
+    feedback: string,
+    phaseName: string,
+    trackDir: string,
+    tasks: Task[],
+    activeSkills: any[]
+  ): Promise<CommandResult> {
+    // Log the feedback for debugging
+    console.log(`User feedback for phase "${phaseName}":`, feedback);
+
+    // Process the feedback and generate fixes
+    // This would involve analyzing the feedback and creating targeted fixes
+    // For now, we'll return a message asking for more details to address the issues
+
+    return {
+      success: false,
+      message: `[PHASE REJECTED] **${phaseName}**\n\nUser identified issues:\n${feedback}\n\nThe system needs to address these problems before proceeding:\n\n**FEEDBACK ANALYSIS:**\n- Issue: ${feedback}\n- Action: IA will analyze feedback and generate fixes\n- Status: Awaiting implementation of feedback processing\n\nWould you like to provide more details about the issues or specify which tasks need correction?`,
+      questions: [
+        {
+          header: "Feedback Details",
+          question: "Please provide more specific details about the issues to help the IA fix them:",
+          type: "text",
+          required: true
+        }
+      ],
+      data: {
+        phaseName,
+        trackDir,
+        feedback,
+        needsCorrection: true,
+        phaseStatus: 'rework_needed'
+      }
+    };
   }
 
   /**

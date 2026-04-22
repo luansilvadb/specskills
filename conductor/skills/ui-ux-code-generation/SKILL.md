@@ -1,260 +1,411 @@
 ---
 name: ui-ux-code-generation
-version: 1.0.0
-description: >
-  Gera código frontend (HTML/CSS/JS/React) focado em resiliência visual.
-  Elimina Layout Shifts (CLS), trata dados ausentes e garante fallbacks
-  visuais e semânticos do consumo da tarefa até a entrega do artefato.
-triggers:
-  - "criar tela"
-  - "criar componente UI"
-  - "layout responsivo"
-  - "corrigir layout quebrado"
-  - "UI com fallback"
-  - "/criar-ui"
+description: Gerar código de interface que incorpora princípios sólidos de UX — acessibilidade (WCAG/ARIA), cobertura completa de estados (idle/hover/focus/active/disabled/loading/empty/error/success), formulários validáveis, feedback imediato, targets táteis adequados e responsividade mobile-first. Ative sempre que o usuário pedir componentes, páginas, formulários, dashboards, botões, modais, menus ou qualquer UI funcional em HTML/CSS/React/Vue/Svelte e a qualidade da experiência (não apenas a estética) importar. Complementar à skill `frontend-design` (que cuida da direção estética bold): esta cuida do *comportamento* correto.
 ---
 
-# UI/UX CODE GENERATOR — Interfaces resilientes, sem CLS e à prova de fallback
+# UI/UX Code Generation
 
-> **Propósito**: Transformar requisitos de interface em código de produção que não quebra — previnindo colapso de layout, vazamento de nulos e ausência de feedback visual.
-
-## Filosofia Central
-
-1. **Defensive Rendering** — Nunca assuma a forma ou presença dos dados.
-   Na prática: use optional chaining (`?.`) e nullish coalescing (`??`) em todo binding de UI.
-2. **Layout Imutability** — Containers pai nunca devem colapsar se o conteúdo falhar.
-   Na prática: sempre use `min-height` em vez de `height`, e defina dimensões fallback para mídia.
-3. **Accessibility by Default** — ARIA e navegação por teclado não são adições, são a base.
-   Na prática: todo elemento interativo recebe `role` (se não for semântico), `aria-label` e estilização `:focus-visible`.
-4. **Graceful Degradation** — Falhas de rede ou dados não podem destruir o esqueleto visual.
-   Na prática: isole o carregamento de dados do carregamento de estrutura (skeletons primeiro, dados depois).
+Gerar código de UI que *funciona bem para humanos* — não só código que renderiza. Este skill garante que cada componente gerado cubra estados, acessibilidade, feedback e entrada adequadamente, antes de qualquer preocupação estética.
 
 ## Quando Ativar
 
-### ✅ Ativar para:
-- Criar componentes do zero (botões, cards, modais, formulários)
-- Refatorar layout propenso a *Cumulative Layout Shift* (CLS)
-- Adicionar resiliência a telas que recebem dados dinâmicos (APIs)
-- Implementar estados obrigatórios: Default, Loading, Empty, Error
+- Pedidos para criar componentes interativos (botões, forms, modais, dropdowns, tabs, menus).
+- Construção de páginas com fluxos de usuário (login, checkout, onboarding, dashboard).
+- Qualquer UI que aceite input do usuário ou mostre estado assíncrono.
+- Revisão ou refatoração de código de interface para melhorar UX/acessibilidade.
+- Conversão de mockup/design para código funcional.
 
-### ❌ NÃO ativar para:
-- Definir paleta de cores, tipografia ou espaçamentos base do design system → use `design-system-creator`
-- Arquitetura de estado (Redux, Context, Zustand) → use `frontend-design`
-- Extrair especificações de arquivos `.fig` ou imagens → use `figma-parser`
+## Relação com Outras Skills
 
-## Escopo e Limites
+- **`frontend-design`**: direção estética, tipografia expressiva, composição visual bold. Use *em conjunto* quando o pedido também exigir identidade visual forte.
+- **Este skill**: comportamento, estados, acessibilidade, fluxo de interação. Priorize este quando o pedido envolver *funcionalidade* e *usabilidade*.
+- Se ambas as dimensões importam, aplique as duas — estética sem UX é bonito e quebrado; UX sem estética é funcional e esquecível.
 
-**Cobre:**
-- Estrutura HTML5 semântica e acessível.
-- CSS (Modules, Tailwind, Styled-Components) focado em grid/flexbox resiliente.
-- Componentes React/Vue/DOM puro com tratamento de bordas.
-- Estados visuais de exceção (Skeleton, Fallback, Erro).
+## Princípios Fundamentais (não-negociáveis)
 
-**Delega:**
-- Lógica de validação de formulários complexa → `form-validation`
-- Requisições HTTP e tratamento de cache → `api-integration`
+### 1. Todo componente interativo cobre TODOS os estados
 
-## Protocolo de Execução
+Nunca entregue um botão com só `:hover`. Todo elemento interativo precisa de:
 
-1. **Mapear Riscos** — Identifique no prompt onde podem ocorrer falhas: textos longos, imagens inexistentes, arrays vazios, tela pequena.
-2. **Estruturar o Esqueleto** — Escreva o HTML semântico (`<section>`, `<article>`, `<nav>`) *antes* de adicionar estilos ou lógica.
-3. **Definir Contratos de Espaço** — Aplique `min-height`, `min-width` e `overflow` nos containers raiz para garantir que a área de pintura nunca colapse.
-4. **Codificar os 4 Estados** — Implemente o componente trocando entre: `Loading` (Skeleton) → `Success` (Dados) → `Empty` (Mensagem clara) → `Error` (Call-to-action de retry).
-5. **Sanitizar Entradas Visuais** — Garanta truncamento de texto (`text-overflow: ellipsis`) e fallback de imagem (`onError` ou tag `<picture>`).
-6. **Testar Mentalmente** — Simule: "E se o texto tiver 500 caracteres? E se a imagem der 404? E se o array for null?". Ajuste o código.
-7. **Empacotar Artefato** — Entregue o código em um único bloco copiável, ou forneça o comando exato de build/execução (ex: `npx vite`).
-
-## Padrões Específicos
-
-### 1. Container Anti-Colapso
-
-**Regra**: Use `min-height` para reservar espaço na tela, evitando que elementos irmãos saltem quando o conteúdo some.
-
-```css
-/* ✅ PASS — Reserva espaço, não quebra se vazio */
-.card-container {
-  min-height: 200px;
-  display: flex;
-  flex-direction: column;
-}
-
-/* ❌ FAIL — Se o conteúdo interno falhar, o container some (CLS) */
-.card-container {
-  height: 200px;
-}
-```
-
-**Por que importa**: Impede Layout Shifts (CLS) que frustram o usuário e penalizam o SEO do Google.
-
----
-
-### 2. Tratamento de Textos Dinâmicos
-
-**Regra**: Nunca permita que um texto longo quebre o grid ou o flexbox pai.
-
-```jsx
-/* ✅ PASS — Trunca com reticências e mostra o título completo no hover/foco */
-<span className="overflow-hidden text-ellipsis whitespace-nowrap" title={user.bio}>
-  {user.bio}
-</span>
-
-/* ❌ FAIL — Texto de 2000 caracteres estoura o card lateral */
-<span>{user.bio}</span>
-```
-
-**Por que importa**: Textos de sistemas externos (APIs, CMS) não têm limite garantido. O layout deve ser à prova de tamanho.
-
----
-
-### 3. Fallback de Mídia (Imagens/Ícones)
-
-**Regra**: Toda tag `<img>` deve ter fallback visual ou nativo para falha de carregamento.
-
-```jsx
-/* ✅ PASS — Troca para placeholder se a URL falhar */
-<img 
-  src={product.image} 
-  alt={`Foto de ${product.name}`}
-  onError={(e) => { e.target.src = '/images/placeholder.png'; e.target.onerror = null; }}
-  className="object-cover w-full h-48 bg-gray-100" /* bg-gray-100 é o fallback do carregamento */
-/>
-
-/* ❌ FAIL — Imagem quebrada exibe o ícone feio de 'X' nativo do navegador */
-<img src={product.image} alt="Produto" />
-```
-
-**Por que importa**: APIs de catálogo frequentemente retornam URLs expiradas ou corrompidas. O UI não pode depender do sucesso absoluto do CDN.
-
----
-
-### 4. Renderização Defensiva de Listas
-
-**Regra**: Nunca acesse propriedades de um array sem verificar sua existência e tamanho.
-
-```jsx
-/* ✅ PASS — Lida com null, undefined e array vazio de forma elegante */
-{!comments ? (
-  <SkeletonRows count={3} />
-) : comments.length === 0 ? (
-  <EmptyState message="Nenhum comentário ainda." />
-) : (
-  <ul>{comments.map(c => <li key={c.id}>{c.text}</li>)}</ul>
-)}
-
-/* ❌ FAIL — Quebra a tela inteira se a API retornar `null` ao invés de `[]` */
-<ul>
-  {comments.map(c => <li key={c.id}>{c.text}</li>)}
-</ul>
-```
-
-**Por que importa**: Um `Cannot read properties of null (reading 'map')` renderiza uma tela em branco (White Screen of Death) para o usuário final.
-
-## Anti-Padrões Críticos
-
-| Anti-padrão | Consequência | Alternativa Correta |
-| :--- | :--- | :--- |
-| Usar `display: none` no estado de Loading | Causa CLS severo ao sumir com o skeleton e aparecer o conteúdo | Use `visibility: hidden` ou mantenha o Skeleton com as mesmas dimensões do conteúdo real |
-| `height: 100%` em cascata | Colapso em árvore se um ancestral perder altura | Use `min-height: 100vh/dvh` ou Grid com `grid-template-rows: 1fr` no body |
-| `<div onclick="...">` | Inacessível por teclado e não lido como botão por leitores de tela | Use `<button type="button">` e aplique CSS para resetar o estilo nativo |
-| Remover outline do foco (`outline: none`) | Usuários de teclado/navegação por voz perdem a posição atual | Use `outline: 2px solid var(--focus-color)` no `:focus-visible` |
-
-## Critérios de Qualidade
-
-Antes de entregar o artefato, confirme:
-
-- [ ] Frontmatter completo e triggers mapeados
-- [ ] HTML utiliza tags semânticas (`<main>`, `<section>`, `<button>`)
-- [ ] Containers pai usam `min-height` em vez de `height`
-- [ ] Textos dinâmicos possuem regra de truncamento (`text-overflow` ou clamp)
-- [ ] Imagens possuem `alt` descritivo e fallback `onError` ou fundo cinza (`bg-gray-100`)
-- [ ] Listas/Arrays verificam `null` e `.length === 0` antes do `.map()`
-- [ ] Componente cobre 4 estados: Default, Loading (Skeleton), Empty, Error
-- [ ] Foco interativo (`:focus-visible`) está visível e estilizado
-- [ ] Código fornecido em bloco único e pronto para copiar/colar no arquivo alvo
-
-## Referências Cruzadas
-
-| Precisa de... | Use a skill... |
-| :--- | :--- |
-| Definir tokens visuais (cores, fontes) | `design-system-creator` |
-| Gerenciar estado global dos componentes | `frontend-design` |
-| Validar inputs de formulários | `form-validation` |
-| Converter design do Figma em código | `figma-parser` |
-
----
-
-## Exemplo Completo (End-to-End)
-
-**Contexto do Usuário**: "Crie um card de perfil de usuário para uma sidebar."
-
-**Artefato Gerado (Resiliência Máxima):**
+| Estado       | Quando aparece                          | Design                              |
+|--------------|-----------------------------------------|-------------------------------------|
+| `idle`       | Estado padrão, sem interação            | Visualmente "pronto para ser usado" |
+| `hover`      | Mouse sobre (apenas em dispositivos com ponteiro) | Feedback suave de interatividade |
+| `focus-visible` | Navegação por teclado                | Ring/outline claro e visível        |
+| `active`     | Durante o clique/toque                  | Pressionado, compresso              |
+| `disabled`   | Ação indisponível                       | Opacidade reduzida, cursor `not-allowed`, `aria-disabled="true"` |
+| `loading`    | Ação assíncrona em andamento            | Spinner/skeleton, conteúdo bloqueado, `aria-busy="true"` |
+| `error`      | Falha                                   | Mensagem clara, cor de erro, ícone  |
+| `empty`      | Lista/dados vazios                      | Ilustração + CTA ou explicação      |
+| `success`    | Confirmação                             | Feedback positivo temporário        |
 
 ```tsx
-import React from 'react';
+// PASS: Botão com estados completos
+<button
+  type="button"
+  onClick={handleClick}
+  disabled={isLoading || isDisabled}
+  aria-busy={isLoading}
+  className="
+    inline-flex items-center gap-2 rounded-lg px-4 py-2
+    bg-indigo-600 text-white font-medium
+    hover:bg-indigo-700
+    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2
+    active:bg-indigo-800 active:scale-[0.98]
+    disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-indigo-600
+    transition-all duration-150
+  "
+>
+  {isLoading && <Spinner aria-hidden="true" />}
+  <span>{isLoading ? 'Salvando...' : 'Salvar'}</span>
+</button>
 
-// Estados de Exceção
-const Skeleton = () => (
-  <div className="animate-pulse flex items-center gap-3">
-    <div className="w-12 h-12 rounded-full bg-gray-300" />
-    <div className="flex-1 space-y-2 py-1">
-      <div className="h-3 w-3/4 rounded bg-gray-300" />
-      <div className="h-2 w-1/2 rounded bg-gray-200" />
-    </div>
-  </div>
-);
+// FAIL: Só idle e hover; quebra teclado, quebra loading, quebra disabled
+<button onClick={handleClick} className="bg-indigo-600 hover:bg-indigo-700 px-4 py-2">
+  Salvar
+</button>
+```
 
-const ErrorFallback = ({ onRetry }: { onRetry: () => void }) => (
-  <div className="p-4 border border-red-200 bg-red-50 rounded-lg text-center min-h-[80px] flex flex-col justify-center">
-    <p className="text-sm text-red-600 font-medium">Erro ao carregar perfil.</p>
-    <button onClick={onRetry} className="text-xs text-red-500 underline mt-1 hover:no-underline">
-      Tentar novamente
-    </button>
-  </div>
-);
+### 2. Acessibilidade é um requisito, não um extra
 
-// Componente Principal
-export const UserProfileCard = ({ user, isLoading, hasError, onRetry }) => {
-  // 1. Tratamento de Erro Crítico
-  if (hasError) return <ErrorFallback onRetry={onRetry} />;
+**Sempre:**
 
-  // 2. Tratamento de Carregamento (Mesmo tamanho do Success para evitar CLS)
-  if (isLoading) return <Skeleton />;
+- HTML semântico primeiro (`<button>`, `<nav>`, `<main>`, `<label>`) — só use `<div role="button">` se não houver alternativa.
+- Todo `<input>` tem `<label>` associado (por `htmlFor`/`for` ou envolvendo).
+- Imagens funcionais têm `alt`; decorativas têm `alt=""` ou `aria-hidden="true"`.
+- Ícones standalone têm `aria-label`; ícones + texto têm o ícone como `aria-hidden="true"`.
+- Contraste mínimo: **4.5:1** para texto normal, **3:1** para texto grande (≥18pt ou ≥14pt bold) e elementos UI.
+- Foco visível — nunca faça `outline: none` sem substituir por `:focus-visible` estilizado.
+- Ordem de tab lógica segue ordem visual.
+- Modais, dropdowns e menus prendem foco enquanto abertos (`focus trap`) e devolvem foco ao fechar.
+- Estados e mudanças dinâmicas são anunciados via `aria-live="polite"` ou `role="status"` (`role="alert"` só para urgências).
+- Zero dependência exclusiva em cor para transmitir informação — adicione ícone, texto ou padrão.
 
-  // 3. Tratamento de Dados Ausentes (Empty State)
-  if (!user) return null; 
+```tsx
+// PASS: input acessível
+<div>
+  <label htmlFor="email" className="block text-sm font-medium">
+    E-mail
+    <span aria-hidden="true" className="text-red-600"> *</span>
+  </label>
+  <input
+    id="email"
+    name="email"
+    type="email"
+    required
+    autoComplete="email"
+    aria-describedby={error ? 'email-error' : 'email-hint'}
+    aria-invalid={!!error}
+    className="..."
+  />
+  {!error && (
+    <p id="email-hint" className="mt-1 text-sm text-gray-600">
+      Usaremos para enviar confirmação.
+    </p>
+  )}
+  {error && (
+    <p id="email-error" role="alert" className="mt-1 text-sm text-red-600">
+      <ExclamationIcon aria-hidden="true" className="inline h-4 w-4 mr-1" />
+      {error}
+    </p>
+  )}
+</div>
+
+// FAIL: sem label associado, erro não vinculado, asterisco sem aria
+<div>
+  <span>E-mail *</span>
+  <input type="email" />
+  {error && <span style={{color:'red'}}>{error}</span>}
+</div>
+```
+
+### 3. Feedback imediato para toda ação
+
+Ação do usuário → **mudança visível em < 100ms**.
+
+- Clicks disparam estado `active` imediato (mesmo que a ação seja assíncrona).
+- Operações > 1s mostram loading state (skeleton > spinner na maioria dos casos).
+- Operações > 10s mostram progresso real se possível.
+- Confirmações destrutivas vêm *antes* da ação (modal), não depois (undo).
+- Success/error anunciados via toast, inline alert ou mudança de estado — nunca silenciosamente.
+- **Optimistic UI** quando a chance de falha é baixa: atualize UI imediatamente, reverta se falhar.
+
+### 4. Prevenção de erro > mensagem de erro
+
+- Desabilite submit enquanto formulário inválido (mas mostre *por quê*).
+- Valide em blur, não em cada keystroke (exceto para password strength, character counter).
+- Confirme ações destrutivas com nome do item digitado (padrão do GitHub) para ações sérias.
+- Use `<input type="...">` correto: `email`, `tel`, `url`, `number`, `date` — ativa teclado certo em mobile e validação nativa.
+- `autocomplete` correto em todo input de formulário (`email`, `name`, `current-password`, `new-password`, `one-time-code`, `street-address`, etc).
+- `inputmode="numeric"` para PINs/códigos; `pattern` para formatos específicos.
+
+## Formulários Bem Feitos
+
+```tsx
+// Checklist implícito neste exemplo:
+// - label associado via htmlFor
+// - autocomplete apropriado
+// - inputmode correto
+// - validação em blur, não em change
+// - erro vinculado via aria-describedby + aria-invalid
+// - hint antes do erro aparecer
+// - submit desabilitado durante envio com aria-busy
+// - foco movido para primeiro erro após falha
+// - success anunciado via role="status"
+
+function LoginForm() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [touched, setTouched] = useState<Record<string, boolean>>({})
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle')
+  const firstErrorRef = useRef<HTMLInputElement>(null)
+
+  const validateField = (name: string, value: string): string => {
+    if (name === 'email') {
+      if (!value) return 'E-mail é obrigatório'
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'Formato de e-mail inválido'
+    }
+    if (name === 'password') {
+      if (!value) return 'Senha é obrigatória'
+      if (value.length < 8) return 'Mínimo 8 caracteres'
+    }
+    return ''
+  }
+
+  const handleBlur = (name: string, value: string) => {
+    setTouched(t => ({ ...t, [name]: true }))
+    const error = validateField(name, value)
+    setErrors(e => ({ ...e, [name]: error }))
+  }
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    const nextErrors = {
+      email: validateField('email', email),
+      password: validateField('password', password),
+    }
+    setErrors(nextErrors)
+    setTouched({ email: true, password: true })
+
+    if (Object.values(nextErrors).some(Boolean)) {
+      firstErrorRef.current?.focus()
+      return
+    }
+
+    setStatus('submitting')
+    try {
+      await login({ email, password })
+      setStatus('success')
+    } catch (err) {
+      setStatus('error')
+    }
+  }
 
   return (
-    <aside 
-      className="p-4 border rounded-lg min-h-[80px] flex items-center gap-3"
-      aria-label={`Perfil do usuário ${user.name ?? 'Não identificado'}`}
-    >
-      {/* 4. Fallback de Imagem e Espaço Reservado */}
-      <img 
-        src={user.avatar} 
-        alt={`Avatar de ${user.name}`}
-        className="w-12 h-12 rounded-full object-cover bg-gray-100 flex-shrink-0"
-        onError={(e) => {
-          (e.target as HTMLImageElement).src = 'https://via.placeholder.com/48';
-          (e.target as HTMLImageElement).onerror = null;
-        }}
+    <form onSubmit={handleSubmit} noValidate className="space-y-4">
+      <Field
+        id="email"
+        label="E-mail"
+        type="email"
+        autoComplete="email"
+        inputMode="email"
+        value={email}
+        onChange={setEmail}
+        onBlur={() => handleBlur('email', email)}
+        error={touched.email ? errors.email : ''}
+        ref={errors.email ? firstErrorRef : undefined}
+        required
       />
-
-      <div className="flex-1 min-w-0"> {/* min-w-0 essencial para flexbox com texto */}
-        {/* 5. Fallback de Texto e Truncamento */}
-        <h3 
-          className="text-sm font-bold text-gray-800 truncate"
-          title={user.name}
-        >
-          {user.name ?? 'Usuário Anônimo'}
-        </h3>
-        
-        <p 
-          className="text-xs text-gray-500 truncate"
-          title={user.role}
-        >
-          {user.role ?? 'Cargo não informado'}
+      <Field
+        id="password"
+        label="Senha"
+        type="password"
+        autoComplete="current-password"
+        value={password}
+        onChange={setPassword}
+        onBlur={() => handleBlur('password', password)}
+        error={touched.password ? errors.password : ''}
+        required
+      />
+      <button
+        type="submit"
+        disabled={status === 'submitting'}
+        aria-busy={status === 'submitting'}
+        className="..."
+      >
+        {status === 'submitting' ? 'Entrando...' : 'Entrar'}
+      </button>
+      {status === 'error' && (
+        <p role="alert" className="text-red-600 text-sm">
+          Não foi possível entrar. Verifique suas credenciais.
         </p>
-      </div>
-    </aside>
-  );
-};
+      )}
+      {status === 'success' && (
+        <p role="status" className="text-green-600 text-sm">
+          Login realizado. Redirecionando...
+        </p>
+      )}
+    </form>
+  )
+}
+```
+
+### Regras de ouro em formulários
+
+- **Um campo por linha** em formulários verticais; agrupe apenas campos logicamente relacionados (CEP + número, cartão + CVV) na mesma linha.
+- **Labels em cima**, nunca só placeholder — placeholder some no foco e prejudica memória/acessibilidade.
+- **Erros inline**, próximos ao campo; sumário geral só em formulários longos e como complemento.
+- **Botão primário à direita** em desktop, **largura total** em mobile.
+- **Botão "Cancelar" nunca é botão primário** — use link ou botão secundário.
+- **Não limpe o formulário em erro** — preserve o que o usuário digitou (exceto senhas por design/segurança quando fizer sentido).
+
+## Estados Vazios, de Erro e Loading
+
+### Empty state ≠ tela em branco
+
+```tsx
+// PASS: Empty state útil
+<div className="flex flex-col items-center text-center py-12">
+  <InboxIcon aria-hidden="true" className="h-12 w-12 text-gray-400" />
+  <h3 className="mt-4 text-lg font-semibold">Nenhuma tarefa ainda</h3>
+  <p className="mt-1 text-sm text-gray-600 max-w-sm">
+    Crie sua primeira tarefa para começar a organizar seu dia.
+  </p>
+  <button type="button" onClick={onCreate} className="mt-4 ...">
+    Criar tarefa
+  </button>
+</div>
+
+// FAIL: "Nada aqui" e ponto final
+<p>Vazio.</p>
+```
+
+### Loading: prefira skeleton > spinner
+
+- **Skeleton**: conteúdo previsível (lista, card, tabela). Reduz *perceived latency*.
+- **Spinner**: ações pontuais (botão, pequenos refresh).
+- **Progress bar**: operações longas com progresso conhecido (upload).
+- **Indeterminate progress**: operações > 3s sem progresso conhecido.
+
+```tsx
+// Skeleton para lista
+{isLoading ? (
+  <ul aria-busy="true" aria-label="Carregando tarefas">
+    {Array.from({ length: 5 }).map((_, i) => (
+      <li key={i} className="flex items-center gap-3 py-3 animate-pulse">
+        <div className="h-4 w-4 rounded bg-gray-200" />
+        <div className="h-4 flex-1 rounded bg-gray-200" />
+      </li>
+    ))}
+  </ul>
+) : (
+  <TaskList tasks={tasks} />
+)}
+```
+
+### Error state acionável
+
+Toda mensagem de erro responde a: **o que aconteceu?**, **por que importa?**, **o que fazer agora?**
+
+```tsx
+// PASS
+<div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4">
+  <h3 className="font-semibold text-red-900">Não foi possível carregar tarefas</h3>
+  <p className="mt-1 text-sm text-red-800">
+    Verificamos sua conexão de rede. Tente novamente em alguns segundos.
+  </p>
+  <button type="button" onClick={refetch} className="mt-3 ...">
+    Tentar novamente
+  </button>
+</div>
+
+// FAIL
+<p style={{color:'red'}}>Error: 500</p>
+```
+
+## Responsividade & Touch
+
+- **Mobile-first**: estilos base para mobile, `@media (min-width: ...)` adiciona para telas maiores.
+- **Touch targets mínimos**: 44×44 CSS pixels (Apple HIG) / 48×48 dp (Material). Inclui padding — `h-11 w-11` mínimo em tap targets isolados.
+- **Espaçamento entre targets** ≥ 8px para evitar toques errados.
+- **Respeite `prefers-reduced-motion`**: cancele animações para quem configurou.
+- **Respeite `prefers-color-scheme`** se dark mode for oferecido.
+- **Container queries** (`@container`) > media queries para componentes reutilizáveis que adaptam ao container, não à viewport.
+- **`max-width` em texto**: 60–75ch para legibilidade de parágrafos longos.
+- **Fontes fluidas** com `clamp()`: `font-size: clamp(1rem, 0.9rem + 0.5vw, 1.25rem)`.
+
+```css
+/* Respeitar reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+```
+
+## Navegação & Orientação
+
+- Usuário **sempre sabe onde está** (título de página, breadcrumb, item de menu destacado, URL semântica).
+- Usuário **sempre sabe como voltar** (back button funciona, breadcrumb clicável, logo leva para home).
+- **Links externos** sinalizados (ícone `↗` + `rel="noopener noreferrer"` + `target="_blank"` + `aria-label` dizendo "abre em nova aba").
+- **Skip link** no topo: `<a href="#main" class="sr-only focus:not-sr-only">Pular para conteúdo</a>`.
+- **Landmarks** (`<header>`, `<nav>`, `<main>`, `<footer>`) presentes e únicos (exceto `<nav>` que pode repetir com `aria-label` distinto).
+
+## Microinterações com Propósito
+
+Cada animação precisa justificar sua existência. Animação boa:
+1. **Comunica causa e efeito** (item voou pro carrinho).
+2. **Orienta atenção** (elemento novo pulsa uma vez).
+3. **Indica progresso** (skeleton, spinner).
+4. **Dá sensação de responsividade** (scale 0.98 no active).
+
+Timing: 150–250ms para micro; 300–400ms para transições de tela. Easing: `ease-out` para entrada, `ease-in` para saída, `ease-in-out` para loop. Evite `linear` (exceto spinner).
+
+## Performance UX
+
+- **Core Web Vitals** como UX: LCP < 2.5s, INP < 200ms, CLS < 0.1.
+- **Reserve espaço** para imagens (`width`/`height`) e conteúdo assíncrono para evitar layout shift.
+- **Virtualização** (`react-window`, `react-virtuoso`) para listas > 100 itens.
+- **Debounce** em search inputs (300–500ms); **throttle** em scroll/resize (16–60ms).
+- **Lazy-load** de imagens fora do viewport (`loading="lazy"`) e de rotas (`React.lazy`).
+- **Otimize fontes**: `font-display: swap`, pré-carregue apenas fontes críticas.
+
+## Anti-padrões Comuns (evitar)
+
+| Anti-padrão                                   | Problema                                    | Correção                              |
+|-----------------------------------------------|---------------------------------------------|---------------------------------------|
+| `<div onClick={...}>` como botão              | Sem foco, sem teclado, sem semântica        | Use `<button>`                        |
+| `outline: none` sem substituto                | Quebra navegação por teclado                | Use `:focus-visible` estilizado       |
+| Placeholder como label                        | Some no foco, ruim pra screen reader        | `<label>` sempre visível              |
+| Desabilitar submit sem dizer por quê          | Usuário trava sem entender                  | Mostre erros ou hints                 |
+| Validação a cada keystroke                    | Irritante, mostra erro antes de terminar    | Valide em blur (ou após primeira submissão) |
+| Só `:hover` para affordance                   | Mobile não tem hover                        | Combine com cor/borda/sombra base     |
+| Toast para erro crítico                       | Some antes de ser lido                      | Modal/inline para bloqueantes         |
+| Infinite scroll sem alternativa               | Impossível achar "Fim", footer inacessível  | "Carregar mais" ou paginação          |
+| Confirmação só por cor                        | Daltônicos perdem                           | Cor + ícone + texto                   |
+| Modal sem foco preso                          | Tab escapa para fundo                       | Focus trap + ESC fecha                |
+| `title` como única dica                       | Mobile não mostra, a11y pobre               | Texto visível ou `aria-describedby`   |
+| Texto em cima de imagem sem overlay           | Contraste variável                          | Overlay escuro/gradiente sob o texto  |
+
+## Checklist Final (antes de entregar)
+
+Antes de considerar um componente pronto, confirme:
+
+- [ ] Funciona com **teclado sozinho** (Tab, Shift+Tab, Enter, Espaço, Esc, setas onde faz sentido).
+- [ ] Passa em **screen reader** mental (cada elemento tem rótulo/role apropriado).
+- [ ] Tem **todos os estados** relevantes (idle, hover, focus-visible, active, disabled, loading, error, empty).
+- [ ] **Contraste ≥ 4.5:1** para texto; ≥ 3:1 para UI.
+- [ ] **Touch targets ≥ 44×44**.
+- [ ] **Responsivo** mobile-first sem scroll horizontal.
+- [ ] **Feedback visual** em < 100ms para toda ação.
+- [ ] **Mensagens de erro** dizem *o que fazer*.
+- [ ] **Empty states** têm CTA ou explicação.
+- [ ] **Respeita `prefers-reduced-motion`**.
+- [ ] **Inputs de form** têm `label`, `autocomplete`, `type` e `inputmode` corretos.
+- [ ] **Nada depende exclusivamente de cor** para transmitir informação.
+
+Se qualquer item falhar, corrija antes de entregar — não é opcional.
