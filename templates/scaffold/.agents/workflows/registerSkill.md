@@ -1,6 +1,6 @@
-# /registerSkill
-
-Maintain the integrity and discovery signals of the expert skill library. This command synchronizes your physical skill files with the semantic recommendation engine.
+---
+description: Maintain the integrity and discovery signals of the expert skill library. This command synchronizes your physical skill files with the semantic recommendation engine.
+---
 
 ## Usage
 

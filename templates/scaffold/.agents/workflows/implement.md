@@ -1,6 +1,6 @@
-# /implement
-
-Execute the implementation cycle for a track. This command orchestrates task progression, context loading, and expert protocol application.
+---
+description: Execute the implementation cycle for a track. This command orchestrates task progression, context loading, and expert protocol application.
+---
 
 ## Usage
 

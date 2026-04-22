@@ -1,10 +1,6 @@
 ---
-description: Archive completed tracks
+description: Finalize and preserve a completed track. This command marks the end of the lifecycle, moving artifacts to the long-term project memory.
 ---
-
-# /archive
-
-Finalize and preserve a completed track. This command marks the end of the lifecycle, moving artifacts to the long-term project memory.
 
 ## Usage
 

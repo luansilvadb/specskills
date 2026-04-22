@@ -1,6 +1,6 @@
-# /review
-
-Validate work against engineering standards and quality gates. This command ensures the track is robust, verified, and ready for archiving.
+---
+description: Validate work against engineering standards and quality gates. This command ensures the track is robust, verified, and ready for archiving.
+---
 
 ## Usage
 

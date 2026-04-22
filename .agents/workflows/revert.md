@@ -1,10 +1,6 @@
 ---
-description: Revert last commit or specific task
+description: Revert changes from a track or specific task.
 ---
-
-# /revert
-
-Revert changes from a track or specific task.
 
 ## Usage
 

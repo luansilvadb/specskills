@@ -1,10 +1,6 @@
 ---
-description: Display project progress overview
+description: Show the current status of all tracks and overall project progress.
 ---
-
-# /status
-
-Show the current status of all tracks and overall project progress.
 
 ## Usage
 

@@ -1,6 +1,6 @@
-# /newTrack
-
-Plan a new feature or fix with automated expert guidance. This command transforms your intent into a structured implementation environment.
+---
+description: Plan a new feature or fix with automated expert guidance. This command transforms your intent into a structured implementation environment.
+---
 
 ## Usage
 

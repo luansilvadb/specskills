@@ -1,6 +1,6 @@
-# /implement
-
-Execute the implementation cycle for a track. This command orchestrates task progression, context loading, and expert protocol application.
+---
+description: Execute the implementation cycle for a track. This command orchestrates task progression, context loading, and expert protocol application.
+---
 
 ## Usage
 
@@ -18,15 +18,10 @@ Execute the implementation cycle for a track. This command orchestrates task pro
 ## Protocol (TDD Cycle)
 
 > [!IMPORTANT]
-> **OBRIGATÓRIO:** Você DEVE executar o comando `/implement` antes de iniciar qualquer tarefa. 
-> 
-> **NÃO** tente interpretar o `plan.md` ou o `spec.md` sozinho para começar a codar. Você precisa do output do comando `/implement` para receber os protocolos ativos de resiliência.
->
-> 1.  Execute `/implement` e **PARE** para ler o output.
-> 2.  **Red Phase**: Defina testes que falham para a tarefa atual indicada pelo comando.
-> 3.  **Green Phase**: Implemente o código mínimo.
-> 4.  **Refactor**: Limpe o código mantendo os testes.
-> 5.  **Checkpoint**: Marque a tarefa como `[x]` no `plan.md`.
+> 1.  **Red Phase**: Define failing tests for the current task.
+> 2.  **Green Phase**: Implement the minimum code to pass the tests.
+> 3.  **Refactor**: Cleanup and optimize while maintaining test integrity.
+> 4.  **Checkpoint**: Finalize the task by marking it `[x]` in the `plan.md` with a commit SHA.
 
 ## Verification
 

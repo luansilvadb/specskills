@@ -1,10 +1,6 @@
 ---
-description: Initialize Conductor project environment
+description: Initialize the Conductor ecosystem for the current project. This command establishes the architectural foundation and smart expert library.
 ---
-
-# /setup
-
-Initialize the Conductor ecosystem for the current project. This command establishes the architectural foundation and smart expert library.
 
 ## Usage
 
