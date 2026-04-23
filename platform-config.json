@@ -1,0 +1,55 @@
+{
+  "platforms": {
+    "claude": {
+      "name": "Claude Code",
+      "description": "Claude Code integration with custom commands and templates",
+      "files": [
+        ".claude/commands/",
+        ".claude/templates/",
+        ".claude/settings.local.json"
+      ],
+      "installationDir": ".claude/"
+    },
+    "agents": {
+      "name": "Agent Systems",
+      "description": "Agent workflow integration with automation capabilities",
+      "files": [
+        ".agents/workflows/",
+        ".agents/templates/"
+      ],
+      "installationDir": ".agents/"
+    },
+    "cli": {
+      "name": "Generic CLI",
+      "description": "Command-line interface support",
+      "files": [
+        "bin/",
+        "config/"
+      ],
+      "installationDir": ""
+    }
+  },
+  "defaultPlatform": "claude",
+  "supportedFeatures": {
+    "newTrack": {
+      "claude": true,
+      "agents": true,
+      "cli": true
+    },
+    "setup": {
+      "claude": true,
+      "agents": true,
+      "cli": true
+    },
+    "implement": {
+      "claude": true,
+      "agents": true,
+      "cli": true
+    },
+    "review": {
+      "claude": true,
+      "agents": true,
+      "cli": true
+    }
+  }
+}

@@ -2,20 +2,20 @@
 
 ## Language
 
-- Primary: TypeScript
+Primary: TypeScript
 
 ## Framework
 
-- To be defined
+To be defined
 
 ## Database
 
-- To be defined
+To be defined
 
 ## Testing
 
-- To be defined
+To be defined
 
 ## Deployment
 
-- To be defined
+To be defined

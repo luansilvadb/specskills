@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is the Conductor project - a Context Engineering extension for Windsurf that provides a spec-driven development framework. It helps AI agents and developers work together through structured tracks, plans, and quality gates.
+This is the Conductor project - a Context Engineering extension for Windsurf that provides a spec-driven development framework. It helps AI agents and developers work together through structured tracks, plans, and quality gates. Now supports multi-platform distribution!
 
 ## Architecture
 
@@ -14,6 +14,23 @@ The project follows a track-based development approach:
 - **Implementation Plans**: Step-by-step tasks in `plan.md` files with specialized protocols
 - **Commands**: Slash commands for managing the development workflow
 
+## Multi-Platform Distribution
+
+The project supports multiple platforms. During installation, select your platform:
+
+- **Claude Code Platform** (`.claude/`):
+  - Custom slash commands in `.claude/commands/`
+  - Claude-specific templates in `.claude/templates/`
+  - Claude settings in `.claude/settings.local.json`
+
+- **Agent Systems Platform** (`.agents/`):
+  - Automation workflows in `.agents/workflows/`
+  - Agent-specific templates in `.agents/templates/`
+
+- **CLI Platform** (binaries and config):
+  - Executables in `bin/`
+  - Configuration in `config/`
+
 ## Key Directories
 
 - `src/`: Main source code
@@ -21,7 +38,16 @@ The project follows a track-based development approach:
   - `src/core/`: Core functionality
   - `src/utils/`: Utility functions for task execution, validation, skills management, etc.
 - `conductor/`: Generated directory containing project artifacts (created after running `/setup`)
-- `templates/`: Template files for specs and plans
+  - `conductor/templates/`: Template files for specs, plans and other essential artifacts
+    - `spec.md`, `plan.md`, `track-index.md` - Track-related templates
+    - `product.md`, `tech-stack.md`, `workflow.md` - Project configuration templates
+    - `product-guidelines.md` - Product guidelines template
+    - `index.md` - Project index template
+  - `conductor/styleguides/`: Code style guidelines for various languages (cpp.md, csharp.md, dart.md, go.md, html-css.md, java.md, javascript.md, php.md, python.md, ruby.md, rust.md, typescript.md, general.md)
+  - `conductor/skills/`: Specialized skills and protocols
+- `templates/`: Legacy template files (original scaffold templates)
+- `.claude/`: Claude Code platform integration (if selected during installation)
+- `.agents/`: Agent Systems platform integration (if selected during installation)
 - `dist/`: Compiled JavaScript output
 
 ## Commands
@@ -67,9 +93,27 @@ npm run test:coverage # Run tests with coverage report
 ## Skills System
 
 The project includes an intelligent skills recommendation system that analyzes track requirements against:
-- Product definition in `product.md`
-- Tech stack in `tech-stack.md`
-- Style guides in `styleguides/`
-- Workflow processes in `workflow.md`
+- Product definition in `conductor/product.md`
+- Tech stack in `conductor/tech-stack.md`
+- Style guides in `conductor/styleguides/`
+- Workflow processes in `conductor/workflow.md`
+- Templates in `conductor/templates/`
 
 Recommended skills with specialized protocols are automatically injected into track specifications and implementation plans.
+
+## Platform-Specific Configuration
+
+Depending on the platform selected during installation:
+
+### Claude Code
+- Platform-specific commands in `.claude/commands/`
+- Claude templates in `.claude/templates/`
+- Claude settings in `.claude/settings.local.json`
+
+### Agent Systems
+- Workflow definitions in `.agents/workflows/`
+- Agent templates in `.agents/templates/`
+
+### CLI
+- Executables in `bin/`
+- Configuration in `config/`

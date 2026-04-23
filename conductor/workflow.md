@@ -1,79 +1,5 @@
 # Project Workflow
 
-## Operational Flowchart
-
-```mermaid
-graph TD
-    %% Estilos
-    classDef fase fill:#e3f2fd,stroke:#1e88e5,stroke-width:2px;
-    classDef redPhase fill:#ffebee,stroke:#e53935,stroke-width:2px;
-    classDef greenPhase fill:#e8f5e9,stroke:#43a047,stroke-width:2px;
-    classDef decision fill:#fff3e0,stroke:#fb8c00,stroke-width:2px;
-
-    Start([Início]) --> T1
-
-    subgraph "Standard Task Workflow"
-        T1[1. Selecionar Tarefa no plan.md] --> T2["2. Marcar em Progresso '[~]'"]
-        T2 --> T3[3. Escrever Testes Falhos]:::redPhase
-        T3 --> T4[4. Implementar Código para Passar]:::greenPhase
-        T4 --> T5[5. Refatorar Código - Opcional]
-        
-        T5 --> T6{6. Cobertura > 80%?}:::decision
-        T6 -- Não --> T3
-        T6 -- Sim --> T7{7. Desvio da Tech Stack?}:::decision
-        
-        T7 -- Sim --> T7a[Parar e Documentar em tech-stack.md] --> T8
-        T7 -- Não --> T8[8. Commitar Alterações de Código]
-        
-        T8 --> T9[9. Anexar Resumo da Tarefa via 'git notes']
-        T9 --> T10["10. Registrar SHA no plan.md '[x]'"]
-        T10 --> T11[11. Commitar Atualização do plan.md]
-    end
-
-    T11 --> Cond{A Tarefa conclui uma Fase?}:::decision
-
-    Cond -- Não --> Fim([Ir para a Próxima Tarefa])
-    
-    Cond -- Sim --> P1
-
-    subgraph "Phase Completion Verification & Checkpointing"
-        P1[1. Anunciar Início do Protocolo]:::fase --> P2[2. Garantir Testes p/ todos os arquivos da Fase]:::fase
-        P2 --> P3[3. Executar Testes Automatizados com Debug]:::fase
-        P3 --> P4[4. Propor Plano de Verificação Manual detalhado]:::fase
-        
-        P4 --> P5{5. Feedback e Aprovação do Usuário?}:::decision
-        P5 -- Não aprovou / Falhou --> P4a[Revisar Código/Plano] --> P3
-        P5 -- Aprovou --> P6[6. Criar Commit de Checkpoint]:::fase
-        
-        P6 --> P7[7. Anexar Relatório de Verificação via 'git notes']:::fase
-        P7 --> P8[8. Registrar SHA do Checkpoint no plan.md]:::fase
-        P8 --> P9[9. Commitar Atualização do plan.md]:::fase
-        P9 --> P10([10. Anunciar Conclusão da Fase])
-    end
-
-    P10 --> TrackCond{A Fase conclui a Track?}:::decision
-    TrackCond -- Não --> Fim
-    TrackCond -- Sim --> S1
-
-    subgraph "Track Completion & Sync (Protocol 4.0)"
-        S1[1. Analisar spec.md vs Docs do Projeto]:::fase --> S2[2. Identificar Novas Funcionalidades e Mudanças]:::fase
-        S2 --> S3[3. Propor Diffs para product.md e tech-stack.md]:::fase
-        S3 --> S4{4. Aprovação dos Diffs?}:::decision
-        S4 -- Sim --> S5[5. Aplicar Mudanças nos Docs Principais]:::fase
-        S4 -- Não --> S6[Ajustar Proposta] --> S3
-        S5 --> S7[6. Registrar Conclusão na index.md]:::fase
-    end
-
-    S7 --> C1
-
-    subgraph "Track Cleanup (Protocol 5.0)"
-        C1[1. Solicitar Decisão de Arquivamento]:::fase --> C2{2. Decisão: Arquivar / Deletar / Manter?}:::decision
-        C2 -- Arquivar --> C3[Mover para conductor/archive/]:::fase
-        C2 -- Deletar --> C4[Remover pasta da Track]:::fase
-        C2 -- Manter --> C5[Fim]
-    end
-```
-
 ## Guiding Principles
 
 1. **The Plan is the Source of Truth:** All work must be tracked in `plan.md`
@@ -82,40 +8,6 @@ graph TD
 4. **High Code Coverage:** Aim for >80% code coverage for all modules
 5. **User Experience First:** Every decision should prioritize user experience
 6. **Non-Interactive & CI-Aware:** Prefer non-interactive commands. Use `CI=true` for watch-mode tools (tests, linters) to ensure single execution.
-7. **Alignment with Operational Flowchart:** All operations must strictly follow the sequential logic defined in the project's operational flowchart.
-
-## Track Management
-
-All development work is organized into **Tracks**.
-
-### Track Structure
-Each track must reside in `conductor/tracks/<track-id>/` and contain:
-1. `index.md`: Track overview and links.
-2. `spec.md`: Specification and goals (use `.agents/templates/spec.md`).
-3. `plan.md`: Implementation phases and tasks (use `.agents/templates/plan.md`).
-
-### Track Lifecycle
-1. **Creation**: Use `/newTrack` to initialize the directory and documents. **Nota:** O agente deve usar as sugestões de Skills do comando para preencher as seções de Mindset no `spec.md` e `plan.md`.
-2. **Implementation**: Use `/implement` to follow the plan and TDD protocol.
-3. **Archiving**: Once complete, move the track directory to `conductor/archive/` and update `conductor/index.md`.
-
-### State Management & Stability Guidelines
-- **File Validation**: Always verify the existence and readability of `plan.md`, `spec.md`, and `index.md` before attempting to modify them. If any critical file is missing or malformed, **abort** the current operation and ask the user for guidance.
-- **Strict Parsing**: When parsing `plan.md` or `index.md` for statuses (e.g., `[ ]`, `[~]`, `[x]`), use strict pattern matching tightly scoped to the start of the line or specific table columns to prevent accidental modifications to unrelated text.
-- **Git Environment & Resilience**: 
-    - **Ghost Commits**: The `/revert` command uses autonomous discovery to find work even if the SHA was lost during a rebase.
-    - **Reconciliation**: Reverts are high-fidelity, identifying both code and plan-update commits for a shared rollback.
-    - **Smart Review**: The `/review` command automatically triggers **Iterative Mode** for changes > 300 lines to ensure Principal Engineer precision.
-- **Graceful Degradation**: If `git` commands fail (e.g., "not a git repository"), gracefully degrade the workflow: skip attaching `git notes`, skip `git diff` steps, and append a pseudo-sha like `[no-git]` instead of failing the workflow entirely.
-
-## Skills Integration
-
-**Skills** are specialized cognitive frameworks that amplify the AI's execution in a specific domain. While Workflows dictate *how* the project moves forward, Skills dictate the *depth and mindset* of the execution.
-
-- **Equipping a Skill**: To invoke a skill, a task in `plan.md` can be annotated with the skill's trigger (e.g., `<skill: ui-engineer>`).
-- **Autonomous Management & Injection**: The Conductor is responsible for the entire artifact lifecycle. During the creation of `plan.md` or `spec.md`, the agent must analyze the task domain and proactively inject relevant skill triggers (e.g., `<skill: ui-architect>`). The user's role is to review these triggers, not to manually insert them.
-- **Skill Repository**: All officially recognized skills reside in `conductor/skills/`.
-- **Active Context**: When executing a task with a designated skill, the agent must read the skill's manifest file and rigidly follow its core directives to ensure a premium output.
 
 ## Task Workflow
 
@@ -147,7 +39,6 @@ All tasks follow a strict lifecycle:
    ```
 
    Target: >80% coverage for new code. The specific tools and commands will vary by language and framework.
-   **LOOP BACK:** If coverage is < 80%, you **must** return to **Step 3 (Write Failing Tests)** to increase test surface area.
 
 7. **Document Deviations:** If implementation differs from tech stack:
    - **STOP** implementation
@@ -160,18 +51,17 @@ All tasks follow a strict lifecycle:
    - Propose a clear, concise commit message e.g, `feat(ui): Create basic HTML structure for calculator`.
    - Perform the commit.
 
-9. **Attach Task Summary with Git Notes (If applicable):**
-   - **Step 9.1: Check Git:** Verify if the project is a git repository (`git status`). If it is not, skip to Step 10 and use `[no-git]` as the hash.
-   - **Step 9.2: Get Commit Hash:** Obtain the hash of the _just-completed commit_ (`git log -1 --format="%H"`).
-   - **Step 9.3: Draft Note Content:** Create a detailed summary for the completed task.
-   - **Step 9.4: Attach Note:** Use the `git notes` command to attach the summary to the commit.
+9. **Attach Task Summary with Git Notes:**
+   - **Step 9.1: Get Commit Hash:** Obtain the hash of the _just-completed commit_ (`git log -1 --format="%H"`).
+   - **Step 9.2: Draft Note Content:** Create a detailed summary for the completed task. This should include the task name, a summary of changes, a list of all created/modified files, and the core "why" for the change.
+   - **Step 9.3: Attach Note:** Use the `git notes` command to attach the summary to the commit.
      ```bash
      # The note content from the previous step is passed via the -m flag.
      git notes add -m "<note content>" <commit_hash>
      ```
 
 10. **Get and Record Task Commit SHA:**
-    - **Step 10.1: Update Plan:** Read `plan.md`, explicitly match the line starting with `- [~]` for the completed task. Update its status to `- [x]`, and append the first 7 characters of the _just-completed commit's_ commit hash (or `[no-git]`).
+    - **Step 10.1: Update Plan:** Read `plan.md`, find the line for the completed task, update its status from `[~]` to `[x]`, and append the first 7 characters of the _just-completed commit's_ commit hash.
     - **Step 10.2: Write Plan:** Write the updated content back to `plan.md`.
 
 11. **Commit Plan Update:**
@@ -185,12 +75,12 @@ All tasks follow a strict lifecycle:
 1.  **Announce Protocol Start:** Inform the user that the phase is complete and the verification and checkpointing protocol has begun.
 
 2.  **Ensure Test Coverage for Phase Changes:**
-    - **Step 2.1: Determine Phase Scope:** To identify the files changed in this phase, find the starting point. Read `plan.md` to find the Git commit SHA of the _previous_ phase's checkpoint. If no previous checkpoint exists or git is not available, the scope is all changes since the first commit (or all files in the current track context).
-    - **Step 2.2: List Changed Files:** If git is available, execute `git diff --name-only <previous_checkpoint_sha> HEAD` to get a precise list of all files modified during this phase. If git is not available, review manually derived list of changed files.
+    - **Step 2.1: Determine Phase Scope:** To identify the files changed in this phase, you must first find the starting point. Read `plan.md` to find the Git commit SHA of the _previous_ phase's checkpoint. If no previous checkpoint exists, the scope is all changes since the first commit.
+    - **Step 2.2: List Changed Files:** Execute `git diff --name-only <previous_checkpoint_sha> HEAD` to get a precise list of all files modified during this phase.
     - **Step 2.3: Verify and Create Tests:** For each file in the list:
-      - **CRITICAL:** First, check its extension. Exclude non-code files.
+      - **CRITICAL:** First, check its extension. Exclude non-code files (e.g., `.json`, `.md`, `.yaml`).
       - For each remaining code file, verify a corresponding test file exists.
-      - If a test file is missing, you **must** create one. Before writing the test, analyze other test files to determine correct naming convention and testing style. The new tests **must** validate functionality described in this phase's tasks.
+      - If a test file is missing, you **must** create one. Before writing the test, **first, analyze other test files in the repository to determine the correct naming convention and testing style.** The new tests **must** validate the functionality described in this phase's tasks (`plan.md`).
 
 3.  **Execute Automated Tests with Proactive Debugging:**
     - Before execution, you **must** announce the exact shell command you will use to run the tests.
@@ -228,7 +118,6 @@ All tasks follow a strict lifecycle:
 5.  **Await Explicit User Feedback:**
     - After presenting the detailed plan, ask the user for confirmation: "**Does this meet your expectations? Please confirm with yes or provide feedback on what needs to be changed.**"
     - **PAUSE** and await the user's response. Do not proceed without an explicit yes or confirmation.
-    - **LOOP BACK:** If the user does not approve or provides feedback on failures, you **must** return to **Step 4 (Propose Manual Verification Plan)** or even **Step 3 (Execute Tests)** if code changes are required.
 
 6.  **Create Checkpoint Commit:**
     - Stage all changes. If no changes occurred in this step, proceed with an empty commit.
@@ -249,42 +138,13 @@ All tasks follow a strict lifecycle:
 
 10. **Announce Completion:** Inform the user that the phase is complete and the checkpoint has been created, with the detailed verification report attached as a git note.
 
-### Track Completion & Synchronization Protocol (Protocol 4.0)
-
-**Trigger:** Executado quando a última tarefa de um `plan.md` é marcada como concluída.
-
-1.  **Analyze Specification vs. Project Documents:**
-    - O agente deve ler o `spec.md` da trilha concluída.
-    - Comparar com `product.md`, `tech-stack.md` e `product-guidelines.md`.
-
-2.  **Identify "Graduable" Content:**
-    - Identificar funcionalidades implementadas que agora fazem parte da definição estável do produto.
-    - Identificar novas tecnologias ou padrões adotados que devem constar no tech-stack global.
-
-3.  **Propose Documentation Diffs:**
-    - O agente deve apresentar uma proposta de alteração (diff) para cada documento afetado.
-    - **CRITICAL:** Não aplicar as mudanças sem aprovação explícita do usuário.
-
-4.  **Execute Synchronization:**
-    - Após o "De acordo" do usuário, aplicar os diffs e commitar as atualizações na documentação do projeto.
-
-### Track Cleanup Protocol (Protocol 5.0)
-
-**Trigger:** Executado imediatamente após a sincronização da documentação (Protocolo 4.0).
-
-1.  **Archive:** (Padrão) Move a pasta da trilha para `conductor/archive/` para manter o histórico audietável.
-2.  **Delete:** Remove permanentemente a pasta se as mudanças forem triviais ou puramente experimentais.
-3.  **Keep:** Mantém na lista ativa se houver planos imediatos de expansão na mesma trilha (não recomendado).
-
-O agente deve atualizar o `conductor/index.md` movendo a entrada da trilha para a seção "Completed Tracks" e registrando a data de conclusão.
-
 ### Quality Gates
 
 Before marking any task complete, verify:
 
 - [ ] All tests pass
 - [ ] Code coverage meets requirements (>80%)
-- [ ] Code follows project's code style guidelines (as defined in `conductor/styleguides/`)
+- [ ] Code follows project's code style guidelines (as defined in `code_styleguides/`)
 - [ ] All public functions/methods are documented (e.g., docstrings, JSDoc, GoDoc)
 - [ ] Type safety is enforced (e.g., type hints, TypeScript types, Go types)
 - [ ] No linting or static analysis errors (using the project's configured tools)
@@ -292,9 +152,96 @@ Before marking any task complete, verify:
 - [ ] Documentation updated if needed
 - [ ] No security vulnerabilities introduced
 
-## Tooling & Commands
+## Development Commands
 
-The AI agent must autonomously determine the tech stack by reading standard project manifests (e.g., `package.json`, `go.mod`, etc.) or referencing `tech-stack.md`. Development commands, testing setup scripts, and linting rules are dynamically inferred from these contextual files rather than being redundantly hardcoded in this workflow orchestration document.
+**AI AGENT INSTRUCTION: This section should be adapted to the project's specific language, framework, and build tools.**
+
+### Setup
+
+```bash
+# Example: Commands to set up the development environment (e.g., install dependencies, configure database)
+# e.g., for a Node.js project: npm install
+# e.g., for a Go project: go mod tidy
+```
+
+### Daily Development
+
+```bash
+# Example: Commands for common daily tasks (e.g., start dev server, run tests, lint, format)
+# e.g., for a Node.js project: npm run dev, npm test, npm run lint
+# e.g., for a Go project: go run main.go, go test ./..., go fmt ./...
+```
+
+### Before Committing
+
+```bash
+# Example: Commands to run all pre-commit checks (e.g., format, lint, type check, run tests)
+# e.g., for a Node.js project: npm run check
+# e.g., for a Go project: make check (if a Makefile exists)
+```
+
+## Testing Requirements
+
+### Unit Testing
+
+- Every module must have corresponding tests.
+- Use appropriate test setup/teardown mechanisms (e.g., fixtures, beforeEach/afterEach).
+- Mock external dependencies.
+- Test both success and failure cases.
+
+### Integration Testing
+
+- Test complete user flows
+- Verify database transactions
+- Test authentication and authorization
+- Check form submissions
+
+### Mobile Testing
+
+- Test on actual iPhone when possible
+- Use Safari developer tools
+- Test touch interactions
+- Verify responsive layouts
+- Check performance on 3G/4G
+
+## Code Review Process
+
+### Self-Review Checklist
+
+Before requesting review:
+
+1. **Functionality**
+   - Feature works as specified
+   - Edge cases handled
+   - Error messages are user-friendly
+
+2. **Code Quality**
+   - Follows style guide
+   - DRY principle applied
+   - Clear variable/function names
+   - Appropriate comments
+
+3. **Testing**
+   - Unit tests comprehensive
+   - Integration tests pass
+   - Coverage adequate (>80%)
+
+4. **Security**
+   - No hardcoded secrets
+   - Input validation present
+   - SQL injection prevented
+   - XSS protection in place
+
+5. **Performance**
+   - Database queries optimized
+   - Images optimized
+   - Caching implemented where needed
+
+6. **Mobile Experience**
+   - Touch targets adequate (44x44px)
+   - Text readable without zooming
+   - Performance acceptable on mobile
+   - Interactions feel native
 
 ## Commit Guidelines
 
@@ -323,8 +270,84 @@ The AI agent must autonomously determine the tech stack by reading standard proj
 ```bash
 git commit -m "feat(auth): Add remember me functionality"
 git commit -m "fix(posts): Correct excerpt generation for short posts"
+git commit -m "test(comments): Add tests for emoji reaction limits"
+git commit -m "style(mobile): Improve button touch targets"
 ```
 
 ## Definition of Done
 
-A task is inherently complete when the **Checkpointing Protocol** passes seamlessly and all **Quality Gates** criteria are met. Emergency hotfixes may temporarily bypass strict track lifecycle constraints if production is down, but they must be retroactively synced into a formal track.
+A task is complete when:
+
+1. All code implemented to specification
+2. Unit tests written and passing
+3. Code coverage meets project requirements
+4. Documentation complete (if applicable)
+5. Code passes all configured linting and static analysis checks
+6. Works beautifully on mobile (if applicable)
+7. Implementation notes added to `plan.md`
+8. Changes committed with proper message
+9. Git note with task summary attached to the commit
+
+## Emergency Procedures
+
+### Critical Bug in Production
+
+1. Create hotfix branch from main
+2. Write failing test for bug
+3. Implement minimal fix
+4. Test thoroughly including mobile
+5. Deploy immediately
+6. Document in plan.md
+
+### Data Loss
+
+1. Stop all write operations
+2. Restore from latest backup
+3. Verify data integrity
+4. Document incident
+5. Update backup procedures
+
+### Security Breach
+
+1. Rotate all secrets immediately
+2. Review access logs
+3. Patch vulnerability
+4. Notify affected users (if any)
+5. Document and update security procedures
+
+## Deployment Workflow
+
+### Pre-Deployment Checklist
+
+- [ ] All tests passing
+- [ ] Coverage >80%
+- [ ] No linting errors
+- [ ] Mobile testing complete
+- [ ] Environment variables configured
+- [ ] Database migrations ready
+- [ ] Backup created
+
+### Deployment Steps
+
+1. Merge feature branch to main
+2. Tag release with version
+3. Push to deployment service
+4. Run database migrations
+5. Verify deployment
+6. Test critical paths
+7. Monitor for errors
+
+### Post-Deployment
+
+1. Monitor analytics
+2. Check error logs
+3. Gather user feedback
+4. Plan next iteration
+
+## Continuous Improvement
+
+- Review workflow weekly
+- Update based on pain points
+- Document lessons learned
+- Optimize for user happiness
+- Keep things simple and maintainable

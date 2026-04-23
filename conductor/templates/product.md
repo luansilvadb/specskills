@@ -3,10 +3,7 @@
 ## Overview
 
 Define your product's purpose and value proposition here.
-
-## Project Goal
-
-Define the primary objective of this new project.
+{{GOAL_SECTION}}
 
 ## Target Users
 
