@@ -5,9 +5,11 @@ import {
   readFile,
   writeFile,
 } from '../utils/fileSystem';
-import { parseTracksIndex, parsePlanTasks, updateTrackStatus } from '../utils/markdown';
+import { parseTracksIndex, parsePlanTasks } from '../utils/markdown';
 import { loadAllSkills, findActiveSkills } from '../utils/skills';
-import { analyzeAndSyncDocumentation, applyDocumentationUpdates } from '../utils/docSync';
+
+const DEFAULT_NO_TRACKS_MESSAGE =
+  'The tracks file is empty or malformed. No tracks to implement.';
 
 // Helper function to validate project setup
 export function validateProjectSetup(conductorDir: string): CommandResult | null {
@@ -25,7 +27,10 @@ export function validateProjectSetup(conductorDir: string): CommandResult | null
 }
 
 // Helper function to read and parse tracks
-export function readAndParseTracks(conductorDir: string): { tracks: any[], result: CommandResult | null } {
+export function readAndParseTracks(
+  conductorDir: string,
+  noTracksMessage: string = DEFAULT_NO_TRACKS_MESSAGE
+): { tracks: any[]; result: CommandResult | null } {
   const tracksContent = readFile(path.join(conductorDir, 'index.md'));
   if (!tracksContent) {
     return {
@@ -43,7 +48,7 @@ export function readAndParseTracks(conductorDir: string): { tracks: any[], resul
       tracks: [],
       result: {
         success: false,
-        message: 'The tracks file is empty or malformed. No tracks to implement.',
+        message: noTracksMessage,
       }
     };
   }
@@ -52,117 +57,101 @@ export function readAndParseTracks(conductorDir: string): { tracks: any[], resul
 }
 
 // Helper function to select a track based on arguments or automatic selection
-export function selectTrack(tracks: any[], contextArgs: string[]): { selectedTrack: any | null, selectionMode: string, result: CommandResult | null } {
+export function selectTrack(
+  tracks: any[],
+  contextArgs: string[]
+): { selectedTrack: any | null; result: CommandResult | null } {
   const trackDescription = contextArgs.join(' ').trim();
-  const hasExplicitDescription = Boolean(trackDescription);
-
-  if (hasExplicitDescription) {
+  if (trackDescription) {
     return handleExplicitTrackSelection(tracks, trackDescription);
-  } else {
-    return handleAutomaticTrackSelection(tracks);
   }
+  return handleAutomaticTrackSelection(tracks);
 }
 
 /**
  * Handle track selection when an explicit description is provided
  */
-function handleExplicitTrackSelection(tracks: any[], trackDescription: string): { selectedTrack: any | null, selectionMode: string, result: CommandResult | null } {
+function handleExplicitTrackSelection(
+  tracks: any[],
+  trackDescription: string
+): { selectedTrack: any | null; result: CommandResult | null } {
   const searchTerm = trackDescription.toLowerCase();
-  const matches = tracks.filter(t =>
-    t.description.toLowerCase().includes(searchTerm) ||
-    t.folderPath.toLowerCase().includes(searchTerm)
+  const matches = tracks.filter(
+    t =>
+      t.description.toLowerCase().includes(searchTerm) ||
+      t.folderPath.toLowerCase().includes(searchTerm)
   );
 
   if (matches.length === 0) {
     return {
       selectedTrack: null,
-      selectionMode: '',
       result: {
         success: false,
         message: `[ERROR] No track found matching "${trackDescription}".`,
-      }
+      },
     };
   }
 
   if (matches.length === 1) {
-    return {
-      selectedTrack: matches[0],
-      selectionMode: `matched by "${trackDescription}"`,
-      result: null
-    };
+    return { selectedTrack: matches[0], result: null };
   }
 
-  // Multiple matches case
   const exactMatch = matches.find((t: any) => t.description.toLowerCase() === searchTerm);
   if (exactMatch) {
-    return {
-      selectedTrack: exactMatch,
-      selectionMode: `exact match for "${trackDescription}"`,
-      result: null
-    };
-  } else {
-    return {
-      selectedTrack: null,
-      selectionMode: '',
-      result: {
-        success: false,
-        message: `[WARNING] Multiple tracks match "${trackDescription}":\n${matches.map((m: any) => `- ${m.description}`).join('\n')}\n\nPlease be more specific.`,
-      }
-    };
+    return { selectedTrack: exactMatch, result: null };
   }
+
+  return {
+    selectedTrack: null,
+    result: {
+      success: false,
+      message: `[WARNING] Multiple tracks match "${trackDescription}":\n${matches.map((m: any) => `- ${m.description}`).join('\n')}\n\nPlease be more specific.`,
+    },
+  };
 }
 
 /**
  * Handle automatic track selection when no explicit description is provided
  */
-function handleAutomaticTrackSelection(tracks: any[]): { selectedTrack: any | null, selectionMode: string, result: CommandResult | null } {
-  // Prioritize "in_progress", then find first incomplete
-  let selectedTrack = tracks.find((t: any) => t.status === 'in_progress') || null;
-  let selectionMode = '';
-
-  if (selectedTrack) {
-    selectionMode = 'automatically selected (active track)';
-  } else {
-    selectedTrack = tracks.find((t: any) => t.status === 'pending') || null;
-    if (selectedTrack) {
-      selectionMode = 'automatically selected (next pending track)';
-    }
-  }
+function handleAutomaticTrackSelection(
+  tracks: any[]
+): { selectedTrack: any | null; result: CommandResult | null } {
+  const selectedTrack =
+    tracks.find((t: any) => t.status === 'in_progress') ||
+    tracks.find((t: any) => t.status === 'pending') ||
+    null;
 
   if (!selectedTrack) {
     return {
       selectedTrack: null,
-      selectionMode: '',
       result: {
         success: true,
         message: '[SUCCESS] All tracks are completed! Use /newTrack to start something new.',
-      }
+      },
     };
   }
 
-  // Require confirmation when automatically selecting
   return {
-    selectedTrack: selectedTrack,
-    selectionMode: selectionMode,
+    selectedTrack,
     result: {
       success: true,
       message: `[CONFIRMATION] About to implement: **${selectedTrack.description}**\n\nDo you want to proceed with this track?`,
       questions: [
         {
-          header: "Confirm Implementation",
+          header: 'Confirm Implementation',
           question: `Implement track: "${selectedTrack.description}"?`,
-          type: "choice",
+          type: 'choice',
           options: [
-            { label: "Yes, proceed", description: "Start implementing the selected track" },
-            { label: "No, select another", description: "Return to track selection" }
-          ]
-        }
+            { label: 'Yes, proceed', description: 'Start implementing the selected track' },
+            { label: 'No, select another', description: 'Return to track selection' },
+          ],
+        },
       ],
       data: {
         trackId: selectedTrack.folderPath,
-        confirmProceed: true
-      }
-    }
+        confirmProceed: true,
+      },
+    },
   };
 }
 
@@ -223,7 +212,7 @@ export function readAndParseTrackPlan(trackDir: string, selectedTrack: any, cond
 // Helper function to update track status in the main index.md file
 export async function updateTrackStatusInIndex(conductorDir: string, trackDescription: string, newStatus: 'pending' | 'in_progress' | 'completed'): Promise<void> {
   const indexPath = path.join(conductorDir, 'index.md');
-  let content = readFile(indexPath);
+  const content = readFile(indexPath);
 
   if (!content) {
     console.error(`Index file not found at ${indexPath}`);
@@ -253,7 +242,7 @@ export async function updateTrackStatusInIndex(conductorDir: string, trackDescri
 }
 
 // Helper function to handle track completion logic
-export function handleTrackCompletion(selectedTrack: any, tasks: any[], _trackDir: string, _conductorDir: string): { completed: boolean, result: CommandResult | null } {
+export function handleTrackCompletion(selectedTrack: any, tasks: any[]): { completed: boolean, result: CommandResult | null } {
   const pendingTasks = tasks.filter(t => t.status === 'pending');
   const currentTask = tasks.find(t => t.status === 'in_progress');
 
@@ -293,63 +282,3 @@ export function handleTrackCompletion(selectedTrack: any, tasks: any[], _trackDi
 
   return { completed: false, result: null };
 }
-
-/**
- * Handle user response to track cleanup options
- */
-export async function handleTrackCleanupResponse(
-  response: string,
-  conductorDir: string,
-  trackId: string
-): Promise<CommandResult> {
-  const { TrackCleanupProtocol, CleanupAction } = await import('../utils/trackCleanup');
-
-  let action: CleanupAction;
-
-  if (response.toLowerCase().includes('archive')) {
-    action = CleanupAction.ARCHIVE;
-  } else if (response.toLowerCase().includes('delete')) {
-    action = CleanupAction.DELETE;
-  } else if (response.toLowerCase().includes('keep') || response.toLowerCase().includes('skip')) {
-    action = CleanupAction.KEEP;
-  } else {
-    // Default to keep if no clear option is identified
-    action = CleanupAction.KEEP;
-  }
-
-  // Prepare cleanup options
-  const cleanupOptions = {
-    action,
-    trackId,
-    archiveLocation: path.join(conductorDir, 'archive')
-  };
-
-  // Execute cleanup action
-  const context = { projectRoot: conductorDir, args: [], data: {} } as any; // Mock context
-  const result = await TrackCleanupProtocol.executeCleanup(context, cleanupOptions);
-
-  // Update the main index to reflect cleanup action
-  if (result.success) {
-    await TrackCleanupProtocol.updateTracksIndex(context, trackId, action);
-
-    // Return appropriate message based on action taken
-    let finalMessage = result.message;
-    if (action === CleanupAction.ARCHIVE) {
-      finalMessage += `\n\n✅ The track has been archived and the index has been updated. The process is complete.`;
-    } else if (action === CleanupAction.DELETE) {
-      finalMessage += `\n\n🗑️ The track has been permanently deleted and the index has been updated. The process is complete.`;
-    } else if (action === CleanupAction.KEEP) {
-      finalMessage += `\n\n📁 The track has been kept in the tracks directory. The process is complete.`;
-    }
-
-    finalMessage += `\n\nYou can now run \`/newTrack\` to start the next feature!`;
-
-    return {
-      success: true,
-      message: finalMessage
-    };
-  }
-
-  return result;
-}
-

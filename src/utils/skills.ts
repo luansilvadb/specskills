@@ -105,8 +105,8 @@ function parseTableBasedFormat(content: string, signals: Record<string, string[]
         // Format based on current catalog.md:
         // | (0) | (1) **id** | (2) version | (3) description | (4) triggers | (5) path | (6) |
 
-        let id = parts[1].replace(/\*\*/g, '').trim();
-        let triggersStr = parts[4];
+        const id = parts[1].replace(/\*\*/g, '').trim();
+        const triggersStr = parts[4];
 
         if (id && triggersStr) {
           const triggerArray = triggersStr
@@ -237,36 +237,41 @@ export function parseSkillFile(id: string, content: string): Skill | null {
  * Parse YAML frontmatter from skill file
  */
 function parseYamlFrontmatter(yamlContent: string): { title: string, keywords: string[], techAffinity: string[], dependencies?: string[], calls?: string[] } {
-  let title = '';
-  let keywords: string[] = [];
-  let techAffinity: string[] = [];
-  let dependencies: string[] = [];
-  let calls: string[] = [];
+  const keywords: string[] = [];
+  const techAffinity: string[] = [];
+  const dependencies: string[] = [];
+  const calls: string[] = [];
+
+  type YamlParseState = {
+    title: string;
+    inTriggers: boolean;
+    inTechAffinity: boolean;
+    inDependencies: boolean;
+    inCalls: boolean;
+  };
 
   const yamlLines = yamlContent.split(/\r?\n/);
-  const parsingState = {
+  const parsingState: YamlParseState = {
+    title: '',
     inTriggers: false,
     inTechAffinity: false,
     inDependencies: false,
-    inCalls: false,
-    descriptionLines: [],
-    inDescription: false
+    inCalls: false
   };
 
   for (const line of yamlLines) {
     updateParsingState(line, parsingState);
     handleListItem(line, parsingState, keywords, techAffinity, dependencies, calls);
-    handleDescriptionLine(line, parsingState);
     resetParsingStateOnNewSection(line, parsingState);
   }
 
-  return { title, keywords, techAffinity, dependencies, calls };
+  return { title: parsingState.title, keywords, techAffinity, dependencies, calls };
 }
 
 /**
  * Update parsing state based on the current line
  */
-function updateParsingState(line: string, state: any): void {
+function updateParsingState(line: string, state: { title: string; inTriggers: boolean; inTechAffinity: boolean; inDependencies: boolean; inCalls: boolean }): void {
   if (line.startsWith('name:')) {
     state.title = line.replace('name:', '').trim();
     resetAllFlags(state);
@@ -282,16 +287,20 @@ function updateParsingState(line: string, state: any): void {
   } else if (line.startsWith('calls:')) {
     state.inCalls = true;
     resetOtherFlags(state, 'inCalls');
-  } else if (line.startsWith('description:')) {
-    state.inDescription = true;
-    resetOtherFlags(state, 'inDescription');
   }
 }
 
 /**
  * Handle list items based on the current parsing state
  */
-function handleListItem(line: string, state: any, keywords: string[], techAffinity: string[], dependencies: string[], calls: string[]): void {
+function handleListItem(
+  line: string,
+  state: { inTriggers: boolean; inTechAffinity: boolean; inDependencies: boolean; inCalls: boolean },
+  keywords: string[],
+  techAffinity: string[],
+  dependencies: string[],
+  calls: string[]
+): void {
   if (state.inTriggers && line.trim().startsWith('-')) {
     const t = line.trim().replace(/^-\s*["']?|["']?$/g, '').trim();
     if (t) keywords.push(t);
@@ -308,22 +317,15 @@ function handleListItem(line: string, state: any, keywords: string[], techAffini
 }
 
 /**
- * Handle description lines
- */
-function handleDescriptionLine(line: string, state: any): void {
-  if (state.inDescription && (line.startsWith(' ') || line.trim() === '')) {
-    state.descriptionLines.push(line.trim());
-  }
-}
-
-/**
  * Reset parsing flags when encountering a new section
  */
-function resetParsingStateOnNewSection(line: string, state: any): void {
+function resetParsingStateOnNewSection(
+  line: string,
+  state: { inTriggers: boolean; inTechAffinity: boolean; inDependencies: boolean; inCalls: boolean }
+): void {
   if (line.trim() !== '') {
     if (!line.startsWith('triggers:') && !line.startsWith('tech_affinity:') &&
-        !line.startsWith('dependencies:') && !line.startsWith('calls:') &&
-        !line.startsWith('description:')) {
+        !line.startsWith('dependencies:') && !line.startsWith('calls:')) {
       resetAllFlags(state);
     }
   }
@@ -332,19 +334,26 @@ function resetParsingStateOnNewSection(line: string, state: any): void {
 /**
  * Reset all parsing flags
  */
-function resetAllFlags(state: any): void {
+function resetAllFlags(state: { inTriggers: boolean; inTechAffinity: boolean; inDependencies: boolean; inCalls: boolean }): void {
   state.inTriggers = false;
   state.inTechAffinity = false;
   state.inDependencies = false;
   state.inCalls = false;
-  state.inDescription = false;
 }
 
 /**
  * Reset all flags except the specified one
  */
-function resetOtherFlags(state: any, keepFlag: string): void {
-  const flags = ['inTriggers', 'inTechAffinity', 'inDependencies', 'inCalls', 'inDescription'];
+function resetOtherFlags(
+  state: { inTriggers: boolean; inTechAffinity: boolean; inDependencies: boolean; inCalls: boolean },
+  keepFlag: 'inTriggers' | 'inTechAffinity' | 'inDependencies' | 'inCalls'
+): void {
+  const flags: Array<'inTriggers' | 'inTechAffinity' | 'inDependencies' | 'inCalls'> = [
+    'inTriggers',
+    'inTechAffinity',
+    'inDependencies',
+    'inCalls',
+  ];
   for (const flag of flags) {
     if (flag !== keepFlag) {
       state[flag] = false;
@@ -382,7 +391,7 @@ function calculateRelevance(skill: Skill, trackTokens: string[], productTokens: 
 
   const titleTokens = tokenize(skill.title);
   const purposeTokens = tokenize(skill.purpose || '');
-  const keywordTokens = skill.keywords.flatMap(k => tokenize(k));
+  const keywordTokens = (skill.keywords ?? []).flatMap(k => tokenize(k));
   const directiveTokens = tokenize(skill.directives || '');
   const contentTokens = tokenize(skill.content);
 
@@ -397,7 +406,7 @@ function calculateRelevance(skill: Skill, trackTokens: string[], productTokens: 
 
   // 2. Check Tech Affinity overlap (Contextual relevance)
   for (const tech of techTokens) {
-    if (skill.techAffinity.some(a => a.toLowerCase() === tech)) {
+    if ((skill.techAffinity ?? []).some(a => a.toLowerCase() === tech)) {
       score += WEIGHTS.TECH_AFFINITY;
     }
   }
@@ -457,8 +466,15 @@ export function getRecommendedSkills(contextDescription: string, allSkills: Skil
 function calculateSemanticRelevance(contextDescription: string, allSkills: Skill[]): { skill: Skill, score: number }[] {
   const context = contextDescription.toLowerCase();
 
+  type SemanticSegments = {
+    task: string;
+    technology: string;
+    requirements: string;
+    constraints: string;
+  };
+
   // Extract semantic segments
-  const segments = {
+  const segments: SemanticSegments = {
     task: extractTaskSegment(context),
     technology: extractTechnologySegment(context),
     requirements: extractRequirementsSegment(context),
@@ -552,7 +568,10 @@ function extractConstraintsSegment(context: string): string {
 /**
  * Calculate deep semantic relevance considering multiple factors
  */
-function calculateDeepSemanticRelevance(skill: Skill, segments: any): number {
+function calculateDeepSemanticRelevance(
+  skill: Skill,
+  segments: { task: string; technology: string; requirements: string; constraints: string }
+): number {
   let score = 0;
 
   // Calculate scores for each segment
@@ -569,7 +588,10 @@ function calculateDeepSemanticRelevance(skill: Skill, segments: any): number {
 /**
  * Calculate domain relevance score
  */
-function calculateDomainScore(segments: any, skill: Skill): number {
+function calculateDomainScore(
+  segments: { task: string; technology: string; requirements: string; constraints: string },
+  skill: Skill
+): number {
   if (segments.task && segments.task.includes('jogo') && skill.domain.toLowerCase().includes('frontend')) {
     return 20;
   }
@@ -579,7 +601,10 @@ function calculateDomainScore(segments: any, skill: Skill): number {
 /**
  * Calculate technology matching score
  */
-function calculateTechnologyScore(segments: any, skill: Skill): number {
+function calculateTechnologyScore(
+  segments: { task: string; technology: string; requirements: string; constraints: string },
+  skill: Skill
+): number {
   if (!skill.techAffinity || !segments.technology) {
     return 0;
   }
@@ -592,7 +617,10 @@ function calculateTechnologyScore(segments: any, skill: Skill): number {
 /**
  * Calculate semantic matching score with purpose
  */
-function calculatePurposeScore(segments: any, skill: Skill): number {
+function calculatePurposeScore(
+  segments: { task: string; technology: string; requirements: string; constraints: string },
+  skill: Skill
+): number {
   if (!skill.purpose || !segments.task || !segments.requirements) return 0;
   const purposeScore = calculateTextSimilarity(segments.task + ' ' + segments.requirements, skill.purpose.toLowerCase());
   return purposeScore * 15;
@@ -601,7 +629,10 @@ function calculatePurposeScore(segments: any, skill: Skill): number {
 /**
  * Calculate semantic matching score with title
  */
-function calculateTitleScore(segments: any, skill: Skill): number {
+function calculateTitleScore(
+  segments: { task: string; technology: string; requirements: string; constraints: string },
+  skill: Skill
+): number {
   if (!segments.task || !skill.title) return 0;
   const titleScore = calculateTextSimilarity(segments.task, skill.title.toLowerCase());
   return titleScore * 10;
@@ -610,7 +641,10 @@ function calculateTitleScore(segments: any, skill: Skill): number {
 /**
  * Calculate semantic matching score with keywords
  */
-function calculateKeywordScore(segments: any, skill: Skill): number {
+function calculateKeywordScore(
+  segments: { task: string; technology: string; requirements: string; constraints: string },
+  skill: Skill
+): number {
   if (!segments.task && !segments.requirements) return 0;
   if (!skill.keywords) return 0;
   const keywordMatches = skill.keywords.filter(keyword => {
@@ -627,7 +661,10 @@ function calculateKeywordScore(segments: any, skill: Skill): number {
 /**
  * Calculate boost for frontend skills when HTML/CSS/JS mentioned
  */
-function calculateFrontendBoostScore(segments: any, skill: Skill): number {
+function calculateFrontendBoostScore(
+  segments: { task: string; technology: string; requirements: string; constraints: string },
+  skill: Skill
+): number {
   const hasFrontendTech = segments.technology && (
     segments.technology.includes('html') ||
     segments.technology.includes('css') ||
@@ -755,7 +792,7 @@ function findSkillIdsInText(text: string, allSkills: Skill[]): Set<string> {
   }
 
   // 2. Match Bold Declarations: **Skill: id1, id2**
-  const boldRegex = /\*\*(?:Skills?|Mindsets?):\s*([^\*]+)\*\*/gi;
+  const boldRegex = /\*\*(?:Skills?|Mindsets?):\s*([^*]+)\*\*/gi;
   while ((match = boldRegex.exec(text)) !== null) {
     const ids = match[1].split(/[,/|\s]+/).map(id => id.trim().toLowerCase());
     ids.forEach(id => {

@@ -5,14 +5,10 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import type { CommandContext, CommandResult, SlashCommand } from '../types';
-import {
-  fileExists,
-  readFile,
-  writeFile,
-  resolveConductorDir,
-} from '../utils/fileSystem';
+import { readFile, writeFile, resolveConductorDir } from '../utils/fileSystem';
 import { parseTracksIndex } from '../utils/markdown';
 import { GitManager } from '../utils/gitUtils';
+import { validateProjectSetup } from './implement.helpers';
 
 interface ReviewIssue {
   file: string;
@@ -312,7 +308,8 @@ function generateReviewReportMessage(report: ReviewReport): string {
     for (const issue of criticalIssues) {
       message += `- **${issue.category.toUpperCase()}** in \`${issue.file}:${issue.line}\`: ${issue.description}\n`;
       if (issue.codeSnippet) {
-        message += `  *Code*: \`${issue.codeSnippet.substring(0, 50)}...`\n`;
+        const clip = issue.codeSnippet.substring(0, 50);
+        message += '  *Code*: `' + clip + '...`\n';
       }
       if (issue.suggestedFix) {
         message += `  *Suggestion*: ${issue.suggestedFix}\n`;
@@ -326,7 +323,8 @@ function generateReviewReportMessage(report: ReviewReport): string {
     for (const issue of highIssues) {
       message += `- **${issue.category.toUpperCase()}** in \`${issue.file}:${issue.line}\`: ${issue.description}\n`;
       if (issue.codeSnippet) {
-        message += `  *Code*: \`${issue.codeSnippet.substring(0, 50)}...`\n`;
+        const clip = issue.codeSnippet.substring(0, 50);
+        message += '  *Code*: `' + clip + '...`\n';
       }
       if (issue.suggestedFix) {
         message += `  *Suggestion*: ${issue.suggestedFix}\n`;
@@ -340,7 +338,8 @@ function generateReviewReportMessage(report: ReviewReport): string {
     for (const issue of mediumIssues) {
       message += `- **${issue.category.toUpperCase()}** in \`${issue.file}:${issue.line}\`: ${issue.description}\n`;
       if (issue.codeSnippet) {
-        message += `  *Code*: \`${issue.codeSnippet.substring(0, 50)}...`\n`;
+        const clip = issue.codeSnippet.substring(0, 50);
+        message += '  *Code*: `' + clip + '...`\n';
       }
       if (issue.suggestedFix) {
         message += `  *Suggestion*: ${issue.suggestedFix}\n`;
@@ -354,7 +353,8 @@ function generateReviewReportMessage(report: ReviewReport): string {
     for (const issue of lowIssues) {
       message += `- **${issue.category.toUpperCase()}** in \`${issue.file}:${issue.line}\`: ${issue.description}\n`;
       if (issue.codeSnippet) {
-        message += `  *Code*: \`${issue.codeSnippet.substring(0, 50)}...`\n`;
+        const clip = issue.codeSnippet.substring(0, 50);
+        message += '  *Code*: `' + clip + '...`\n';
       }
       if (issue.suggestedFix) {
         message += `  *Suggestion*: ${issue.suggestedFix}\n`;
@@ -373,15 +373,9 @@ export const reviewCommand: SlashCommand = {
     try {
       const conductorDir = resolveConductorDir(context.projectRoot);
 
-      // Validate project setup
-      const requiredFiles = ['product.md', 'tech-stack.md', 'workflow.md'];
-      const missingFiles = requiredFiles.filter(f => !fileExists(path.join(conductorDir, f)));
-
-      if (missingFiles.length > 0) {
-        return {
-          success: false,
-          message: '[SKIP] Conductor is not set up. Please run /setup.',
-        };
+      const setupCheck = validateProjectSetup(conductorDir);
+      if (setupCheck) {
+        return setupCheck;
       }
 
       // Determine target track or review entire project

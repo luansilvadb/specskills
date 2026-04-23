@@ -64,12 +64,13 @@ Propósito: Garantir que nenhum dado sensível vaze.
     it('should recommend skill if description contains keyword', () => {
       const rec = getRecommendedSkills('Create a new UI layout', allSkills);
       expect(rec).toHaveLength(1);
-      expect(rec[0].id).toBe('ui');
+      expect(rec[0].skill.id).toBe('ui');
     });
 
     it('should recommend multiple skills if they match', () => {
       const rec = getRecommendedSkills('Setup database and UI', allSkills);
-      expect(rec).toHaveLength(2);
+      expect(rec.length).toBeGreaterThanOrEqual(2);
+      expect(rec.map(r => r.skill.id).sort()).toEqual(['db', 'ui']);
     });
   });
 

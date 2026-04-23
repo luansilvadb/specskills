@@ -4,57 +4,9 @@
 
 import * as path from 'path';
 import type { CommandContext, CommandResult, SlashCommand } from '../types';
-import {
-  fileExists,
-  readFile,
-  writeFile,
-  resolveConductorDir,
-  execCommand,
-} from '../utils/fileSystem';
-import { parseTracksIndex, parsePlanTasks, updateTaskStatus, updateTrackStatus } from '../utils/markdown';
+import { readFile, writeFile, resolveConductorDir } from '../utils/fileSystem';
 import { GitManager } from '../utils/gitUtils';
-
-// Helper function to validate project setup
-function validateProjectSetup(conductorDir: string): CommandResult | null {
-  const requiredFiles = ['product.md', 'tech-stack.md', 'workflow.md'];
-  const missingFiles = requiredFiles.filter(f => !fileExists(path.join(conductorDir, f)));
-
-  if (missingFiles.length > 0) {
-    return {
-      success: false,
-      message: '[SKIP] Conductor is not set up. Please run /setup.',
-    };
-  }
-
-  return null;
-}
-
-// Helper function to read and parse tracks
-function readAndParseTracks(conductorDir: string): { tracks: any[], result: CommandResult | null } {
-  const tracksContent = readFile(path.join(conductorDir, 'index.md'));
-  if (!tracksContent) {
-    return {
-      tracks: [],
-      result: {
-        success: false,
-        message: 'No tracks found. Create a track first with /newTrack.',
-      }
-    };
-  }
-
-  const tracks = parseTracksIndex(tracksContent);
-  if (tracks.length === 0) {
-    return {
-      tracks: [],
-      result: {
-        success: false,
-        message: 'The tracks file is empty or malformed. No tracks to revert.',
-      }
-    };
-  }
-
-  return { tracks, result: null };
-}
+import { readAndParseTracks, validateProjectSetup } from './implement.helpers';
 
 // Helper function to select a track based on arguments
 function selectTrack(tracks: any[], contextArgs: string[]): { selectedTrack: any | null, result: CommandResult | null } {
@@ -85,7 +37,9 @@ function selectTrack(tracks: any[], contextArgs: string[]): { selectedTrack: any
         message: `[ERROR] No track found matching "${trackDescription}".`,
       }
     };
-  } else if (matches.length > 1) {
+  }
+
+  if (matches.length > 1) {
     return {
       selectedTrack: null,
       result: {
@@ -93,9 +47,28 @@ function selectTrack(tracks: any[], contextArgs: string[]): { selectedTrack: any
         message: `[WARNING] Multiple tracks match "${trackDescription}":\n${matches.map(m => `- ${m.description}`).join('\n')}\n\nPlease be more specific.`,
       }
     };
-  } else {
-    return { selectedTrack: matches[0], result: null };
   }
+
+  return { selectedTrack: matches[0], result: null };
+}
+
+function extractCommitHashes(stdout: string, filter: (line: string) => boolean, limit?: number): string[] {
+  const commits = stdout
+    .split('\n')
+    .filter(filter)
+    .map(line => line.trim().split(' ')[0]);
+
+  return typeof limit === 'number' ? commits.slice(0, limit) : commits;
+}
+
+function getCommitsToRevert(stdout: string, level: 'task' | 'phase' | 'track'): string[] {
+  if (level === 'task') {
+    return extractCommitHashes(stdout, line => line.includes('feat(task):'), 3);
+  }
+  if (level === 'phase') {
+    return extractCommitHashes(stdout, line => line.includes('checkpoint('), 1);
+  }
+  return extractCommitHashes(stdout, line => line.trim() !== '');
 }
 
 // Helper function to analyze git history for reversion
@@ -106,27 +79,7 @@ async function analyzeGitHistory(trackDir: string, level: 'task' | 'phase' | 'tr
   try {
     const { stdout } = gitManager['execGit'](['log', '--oneline', '--graph', '-10']); // Last 10 commits
 
-    // Based on the reversion level, identify commits to revert
-    let commitsToRevert: string[] = [];
-
-    if (level === 'task') {
-      // Find commits related to specific tasks
-      commitsToRevert = stdout.split('\n')
-        .filter(line => line.includes('feat(task):'))
-        .map(line => line.trim().split(' ')[0]) // Extract commit hash
-        .slice(0, 3); // Last 3 task commits
-    } else if (level === 'phase') {
-      // Find checkpoint commits for phases
-      commitsToRevert = stdout.split('\n')
-        .filter(line => line.includes('checkpoint('))
-        .map(line => line.trim().split(' ')[0])
-        .slice(0, 1); // Most recent phase checkpoint
-    } else { // track
-      // All commits in the track
-      commitsToRevert = stdout.split('\n')
-        .filter(line => line.trim() !== '')
-        .map(line => line.trim().split(' ')[0]);
-    }
+    const commitsToRevert = getCommitsToRevert(stdout, level);
 
     if (commitsToRevert.length === 0) {
       return {
@@ -152,6 +105,14 @@ async function analyzeGitHistory(trackDir: string, level: 'task' | 'phase' | 'tr
   }
 }
 
+function parseRevertLevel(args: string[]): 'task' | 'phase' | 'track' {
+  const levelArg = args[1]?.toLowerCase();
+  if (levelArg === 'task' || levelArg === 'phase' || levelArg === 'track') {
+    return levelArg;
+  }
+  return 'task';
+}
+
 // Helper function to revert commits
 async function performReversion(trackDir: string, commits: string[]): Promise<CommandResult> {
   const gitManager = new GitManager(trackDir);
@@ -163,7 +124,7 @@ async function performReversion(trackDir: string, commits: string[]): Promise<Co
 
     for (const commitHash of commits) {
       try {
-        const result = gitManager['execGit'](['revert', '--no-commit', commitHash]);
+        gitManager['execGit'](['revert', '--no-commit', commitHash]);
         revertedCommits.push(commitHash);
       } catch (error) {
         failedReverts.push(`${commitHash}: ${(error as Error).message}`);
@@ -202,7 +163,7 @@ async function performReversion(trackDir: string, commits: string[]): Promise<Co
 // Helper function to update plan.md to unmark completed tasks
 function updatePlanForReversion(trackDir: string, level: 'task' | 'phase' | 'track'): CommandResult {
   const planPath = path.join(trackDir, 'plan.md');
-  let planContent = readFile(planPath) || '';
+  const planContent = readFile(planPath) || '';
 
   if (!planContent) {
     return {
@@ -260,7 +221,10 @@ export const revertCommand: SlashCommand = {
       }
 
       // 2. Track Selection
-      const { tracks, result: tracksResult } = readAndParseTracks(conductorDir);
+      const { tracks, result: tracksResult } = readAndParseTracks(
+        conductorDir,
+        'The tracks file is empty or malformed. No tracks to revert.'
+      );
       if (tracksResult) {
         return tracksResult;
       }
@@ -278,14 +242,7 @@ export const revertCommand: SlashCommand = {
         };
       }
 
-      // Determine reversion level from arguments
-      let level: 'task' | 'phase' | 'track' = 'task'; // Default
-      if (args.length > 1) {
-        const levelArg = args[1].toLowerCase();
-        if (['task', 'phase', 'track'].includes(levelArg)) {
-          level = levelArg as 'task' | 'phase' | 'track';
-        }
-      }
+      const level = parseRevertLevel(args);
 
       // Analyze git history for the requested level
       const analysisResult = await analyzeGitHistory(path.join(conductorDir, selectedTrack.folderPath), level);

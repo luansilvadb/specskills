@@ -25,14 +25,6 @@ export interface TestResult {
   errors?: string[];
 }
 
-export interface PhaseVerification {
-  phaseName: string;
-  tasksCompleted: string[];
-  manualTestPlan: ManualTestPlan;
-  verificationPassed: boolean;
-  notes?: string;
-}
-
 export interface ManualTestPlan {
   testScenarios: TestScenario[];
   acceptanceCriteria: string[];
@@ -201,7 +193,7 @@ export class TaskExecutionManager {
   /**
    * Initialize the green phase by running initial tests
    */
-  private async initializeGreenPhase(task: Task, context: TaskExecutionContext, gitManager: GitManager, trackDir: string): Promise<any> {
+  private async initializeGreenPhase(_task: Task, _context: TaskExecutionContext, gitManager: GitManager, _trackDir: string): Promise<any> {
     return await gitManager.runTestSuite();
   }
 
@@ -699,8 +691,8 @@ export function implementTask() {
   private updatePlanContentByDescription(planContent: string, status: 'in-progress' | 'completed', taskDescription: string, commitHash?: string): string {
     if (status === 'in-progress') {
       return planContent.replace(
-        new RegExp(`(- \\[ \\])\\s*${this.escapeRegExp(taskDescription)}`, 'i'),
-        '- [~] $1'
+        new RegExp(`(- \\[ \\])\\s*(${this.escapeRegExp(taskDescription)})`, 'i'),
+        '- [~] $2'
       );
     } else if (status === 'completed') {
       return this.updateCompletedTaskByDescription(planContent, taskDescription, commitHash);
@@ -720,8 +712,8 @@ export function implementTask() {
       );
     } else {
       return planContent.replace(
-        new RegExp(`(- \\[[ ~]\\])\\s*${this.escapeRegExp(taskDescription)}`, 'i'),
-        '- [x] $1'
+        new RegExp(`(- \\[[ ~]\\])\\s*(${this.escapeRegExp(taskDescription)})`, 'i'),
+        '- [x] $2'
       );
     }
   }
@@ -731,38 +723,17 @@ export function implementTask() {
    */
   private async updatePhaseStatusInPlan(trackDir: string, phaseName: string, status: string): Promise<void> {
     const planPath = path.join(trackDir, 'plan.md');
-    let planContent = readFile(planPath) || '';
+    const planContent = readFile(planPath) || '';
+    const phaseHeaderPattern = new RegExp(`^(##|#)\\s+${this.escapeRegExp(phaseName)}.*$`, 'im');
 
-    // Check if the plan has phases (look for phase headers)
-    const hasPhases = planContent.includes('# ') || planContent.includes('## ');
-
-    if (hasPhases) {
-      // If the plan has phases, we'll mark the phase header with the status
-      // Look for patterns like ## Phase Name or ### Phase Name
-      const phaseHeaderPattern = new RegExp(`^(##|#)\\s+${this.escapeRegExp(phaseName)}.*$`, 'im');
-
-      if (phaseHeaderPattern.test(planContent)) {
-        // If phase header exists, add status to it
-        const phaseStatusMarker = status === 'completed' ? ' [DONE]' : status === 'in-progress' ? ' [IN PROGRESS]' : '';
-        planContent = planContent.replace(
-          phaseHeaderPattern,
-          `$&${phaseStatusMarker}`
-        );
-      } else {
-        // If phase header doesn't exist, we'll just make sure all tasks are marked appropriately
-        // The individual tasks should already be updated by updateTaskStatus
-      }
-    } else {
-      // If no phases, the entire plan is treated as one phase
-      // In this case, we ensure all tasks are properly marked
+    if (!phaseHeaderPattern.test(planContent)) {
+      return;
     }
 
-    // Also ensure all tasks in this phase are marked as completed
-    // Find tasks in this phase and ensure they're marked as completed
-    // This implementation assumes tasks are grouped under phase headers
-
-    // Write updated content back to file
-    writeFile(planPath, planContent);
+    const phaseStatusMarker =
+      status === 'completed' ? ' [DONE]' : status === 'in-progress' ? ' [IN PROGRESS]' : '';
+    const updatedContent = planContent.replace(phaseHeaderPattern, `$&${phaseStatusMarker}`);
+    writeFile(planPath, updatedContent);
   }
 
   /**
@@ -803,7 +774,7 @@ export function implementTask() {
     const manualTestPlan = await this.generatePhaseVerificationPlan(tasks, phaseName, activeSkills);
 
     // Save verification plan
-    await this.saveVerificationPlan(manualTestPlan, phaseName, _trackDir, activeSkills);
+    await this.saveVerificationPlan(manualTestPlan, phaseName, _trackDir);
 
     return {
       success: true,
@@ -832,7 +803,7 @@ export function implementTask() {
   /**
    * Generate verification plan for a phase
    */
-  private async generatePhaseVerificationPlan(tasks: Task[], phaseName: string, activeSkills: any[] = []): Promise<ManualTestPlan> {
+  private async generatePhaseVerificationPlan(tasks: Task[], _phaseName: string, activeSkills: any[] = []): Promise<ManualTestPlan> {
     const testScenarios: TestScenario[] = [];
 
     // Create test scenarios based on the tasks in the phase
@@ -895,6 +866,25 @@ export function implementTask() {
     };
   }
 
+  private async saveVerificationPlan(
+    plan: ManualTestPlan,
+    phaseName: string,
+    trackDir: string
+  ): Promise<void> {
+    const safe = phaseName.replace(/[^a-z0-9-_]/gi, '_').slice(0, 80) || 'phase';
+    const lines = [
+      `# Phase verification: ${phaseName}`,
+      '',
+      ...plan.testScenarios.map(
+        (t) =>
+          `## ${t.description}\n- Steps: ${t.steps.join('; ')}\n- Expected: ${t.expectedResult}\n`
+      ),
+      '## Acceptance criteria',
+      ...plan.acceptanceCriteria.map((c) => `- ${c}`),
+    ];
+    writeFile(path.join(trackDir, `phase-verification-${safe}.md`), lines.join('\n'));
+  }
+
   /**
    * Handle user response to manual verification
    */
@@ -902,15 +892,14 @@ export function implementTask() {
     response: string,
     phaseName: string,
     trackDir: string,
-    tasks: Task[],
-    activeSkills: any[]
+    tasks: Task[]
   ): Promise<CommandResult> {
     if (response.toLowerCase().includes('sim') || response.toLowerCase().includes('tudo certo')) {
       // Caminho Feliz: Usuário aprovou
-      return await this.handlePhaseApproval(phaseName, trackDir, tasks, activeSkills);
+      return await this.handlePhaseApproval(phaseName, trackDir, tasks);
     } else {
       // Caminho Não Feliz: Usuário identificou problemas
-      return await this.handlePhaseRejection(response, phaseName, trackDir, tasks, activeSkills);
+      return await this.handlePhaseRejection(response, phaseName, trackDir);
     }
   }
 
@@ -920,8 +909,7 @@ export function implementTask() {
   private async handlePhaseApproval(
     phaseName: string,
     trackDir: string,
-    tasks: Task[],
-    activeSkills: any[]
+    tasks: Task[]
   ): Promise<CommandResult> {
     // Initialize git manager for checkpoint
     const gitManager = new GitManager(trackDir);
@@ -968,9 +956,7 @@ export function implementTask() {
   private async handlePhaseRejection(
     feedback: string,
     phaseName: string,
-    trackDir: string,
-    tasks: Task[],
-    activeSkills: any[]
+    trackDir: string
   ): Promise<CommandResult> {
     // Log the feedback for debugging
     console.log(`User feedback for phase "${phaseName}":`, feedback);
