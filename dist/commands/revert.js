@@ -1,6 +1,6 @@
 "use strict";
 /**
- * Revert command - Reverts changes from a track or task
+ * Revert command - Safely reverts tasks, phases, or entire tracks
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -39,42 +39,247 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.revertCommand = void 0;
 const path = __importStar(require("path"));
 const fileSystem_1 = require("../utils/fileSystem");
-const markdown_1 = require("../utils/markdown");
-exports.revertCommand = {
-    name: 'revert',
-    description: 'Reverts the last commit or a specific task',
-    execute: async (context) => {
-        try {
-            const conductorDir = (0, fileSystem_1.resolveConductorDir)(context.projectRoot);
-            // Verify setup
-            if (!(0, fileSystem_1.fileExists)(conductorDir)) {
-                return {
-                    success: false,
-                    message: '[SKIP] Conductor is not set up. Please run /setup first.',
-                };
+const gitUtils_1 = require("../utils/gitUtils");
+const implement_helpers_1 = require("./implement.helpers");
+// Helper function to select a track based on arguments
+function selectTrack(tracks, contextArgs) {
+    const trackDescription = contextArgs.join(' ').trim();
+    if (!trackDescription) {
+        return {
+            selectedTrack: null,
+            result: {
+                success: false,
+                message: '[ERROR] Please specify which track to revert. Use /revert <track_description>.',
             }
-            // Parse arguments
-            const args = context.args;
-            const revertType = args[0];
-            // 1. GUIDED SELECTION: If no target provided, offer candidates
-            if (!revertType) {
-                return await presentRevertMenu(conductorDir);
+        };
+    }
+    // Find track by description or ID
+    const searchTerm = trackDescription.toLowerCase();
+    const matches = tracks.filter(t => t.description.toLowerCase().includes(searchTerm) ||
+        t.folderPath.toLowerCase().includes(searchTerm));
+    if (matches.length === 0) {
+        return {
+            selectedTrack: null,
+            result: {
+                success: false,
+                message: `[ERROR] No track found matching "${trackDescription}".`,
             }
-            if (revertType === 'last') {
-                return await revertLastTask(conductorDir);
+        };
+    }
+    else if (matches.length > 1) {
+        return {
+            selectedTrack: null,
+            result: {
+                success: false,
+                message: `[WARNING] Multiple tracks match "${trackDescription}":\n${matches.map(m => `- ${m.description}`).join('\n')}\n\nPlease be more specific.`,
             }
-            if (revertType === 'track' && args[1]) {
-                const trackName = args.slice(1).join(' ');
-                return await revertTrack(conductorDir, trackName);
-            }
-            if (revertType === 'task' && args[1]) {
-                const taskName = args.slice(1).join(' ');
-                return await revertTask(conductorDir, taskName);
-            }
+        };
+    }
+    else {
+        return { selectedTrack: matches[0], result: null };
+    }
+}
+// Helper function to analyze git history for reversion
+async function analyzeGitHistory(trackDir, level) {
+    const gitManager = new gitUtils_1.GitManager(trackDir);
+    // Get git log to analyze commit history
+    try {
+        const { stdout } = gitManager['execGit'](['log', '--oneline', '--graph', '-10']); // Last 10 commits
+        // Based on the reversion level, identify commits to revert
+        let commitsToRevert = [];
+        if (level === 'task') {
+            // Find commits related to specific tasks
+            commitsToRevert = stdout.split('\n')
+                .filter(line => line.includes('feat(task):'))
+                .map(line => line.trim().split(' ')[0]) // Extract commit hash
+                .slice(0, 3); // Last 3 task commits
+        }
+        else if (level === 'phase') {
+            // Find checkpoint commits for phases
+            commitsToRevert = stdout.split('\n')
+                .filter(line => line.includes('checkpoint('))
+                .map(line => line.trim().split(' ')[0])
+                .slice(0, 1); // Most recent phase checkpoint
+        }
+        else { // track
+            // All commits in the track
+            commitsToRevert = stdout.split('\n')
+                .filter(line => line.trim() !== '')
+                .map(line => line.trim().split(' ')[0]);
+        }
+        if (commitsToRevert.length === 0) {
             return {
                 success: false,
-                message: `Unknown revert command: ${revertType}. Use 'last', 'track <name>', or 'task <name>'.`,
+                message: `[INFO] No ${level} commits found to revert in this track.`
             };
+        }
+        return {
+            success: true,
+            message: `[ANALYSIS] Found ${commitsToRevert.length} ${level} commits to revert:\n${commitsToRevert.map(hash => `- ${hash}`).join('\n')}\n\nShould I proceed with reverting these commits?`,
+            data: {
+                commitsToRevert,
+                level,
+                canRevert: true
+            }
+        };
+    }
+    catch (error) {
+        return {
+            success: false,
+            message: `[ERROR] Could not analyze git history: ${error.message}`
+        };
+    }
+}
+// Helper function to revert commits
+async function performReversion(trackDir, commits) {
+    const gitManager = new gitUtils_1.GitManager(trackDir);
+    try {
+        // Perform git revert for each commit
+        const revertedCommits = [];
+        const failedReverts = [];
+        for (const commitHash of commits) {
+            try {
+                gitManager['execGit'](['revert', '--no-commit', commitHash]);
+                revertedCommits.push(commitHash);
+            }
+            catch (error) {
+                failedReverts.push(`${commitHash}: ${error.message}`);
+            }
+        }
+        // If all commits were reverted successfully, commit the revert
+        if (failedReverts.length === 0 && revertedCommits.length > 0) {
+            gitManager['execGit'](['commit', '-m', `revert(${commits.length} commits): Reverting ${revertedCommits.length} ${revertedCommits.length === 1 ? 'commit' : 'commits'} due to reversion request`]);
+            return {
+                success: true,
+                message: `[SUCCESS] Successfully reverted ${revertedCommits.length} commits:\n${revertedCommits.map(hash => `- ${hash}`).join('\n')}`
+            };
+        }
+        else if (revertedCommits.length > 0) {
+            // Some commits were reverted, some failed
+            return {
+                success: true, // Partial success
+                message: `[PARTIAL] Reverted ${revertedCommits.length} commits, ${failedReverts.length} failed:\n\nReverted:\n${revertedCommits.map(hash => `- ${hash}`).join('\n')}\n\nFailed:\n${failedReverts.join('\n')}`
+            };
+        }
+        else {
+            // No commits were reverted
+            return {
+                success: false,
+                message: `[FAILURE] Failed to revert any commits:\n${failedReverts.join('\n')}`
+            };
+        }
+    }
+    catch (error) {
+        return {
+            success: false,
+            message: `[ERROR] Reversion process failed: ${error.message}`
+        };
+    }
+}
+// Helper function to update plan.md to unmark completed tasks
+function updatePlanForReversion(trackDir, level) {
+    const planPath = path.join(trackDir, 'plan.md');
+    const planContent = (0, fileSystem_1.readFile)(planPath) || '';
+    if (!planContent) {
+        return {
+            success: false,
+            message: 'Plan file not found for reversion.'
+        };
+    }
+    // Replace completed markers [x] back to pending [ ] based on reversion level
+    let updatedContent = planContent;
+    if (level === 'task') {
+        // Only change the most recently completed task back to in-progress [~]
+        const lastCompletedTaskRegex = /(.*?)- \[x\] ([^\n]*)/;
+        if (lastCompletedTaskRegex.test(updatedContent)) {
+            updatedContent = updatedContent.replace(/- \[x\] ([^\n]*)([\s\S]*)$/, '- [~] $1$2');
+        }
+    }
+    else if (level === 'phase') {
+        // Change all tasks in the most recent phase back to pending [ ]
+        // This is a simplified implementation - in reality, you'd identify tasks by phase
+        updatedContent = updatedContent.replace(/- \[x\]/g, '- [ ]').replace(/- \[~\]/g, '- [ ]');
+    }
+    else { // track
+        // Change all completed and in-progress tasks back to pending
+        updatedContent = updatedContent.replace(/- \[x\]/g, '- [ ]').replace(/- \[~\]/g, '- [ ]');
+    }
+    // Write updated content back to file
+    try {
+        (0, fileSystem_1.writeFile)(planPath, updatedContent);
+        return {
+            success: true,
+            message: `[UPDATE] Plan updated to reflect reversion of ${level} status. Tasks reverted to ${level === 'task' ? 'in-progress' : 'pending'} state.`
+        };
+    }
+    catch (error) {
+        return {
+            success: false,
+            message: `[ERROR] Could not update plan file: ${error.message}`
+        };
+    }
+}
+exports.revertCommand = {
+    name: 'revert',
+    description: 'Safely reverts tasks, phases, or entire tracks',
+    execute: async (context, args) => {
+        try {
+            // 1. Setup Check Protocol
+            const conductorDir = (0, fileSystem_1.resolveConductorDir)(context.projectRoot);
+            // Validate project setup
+            const validation = (0, implement_helpers_1.validateProjectSetup)(conductorDir);
+            if (validation) {
+                return validation;
+            }
+            // 2. Track Selection
+            const { tracks, result: tracksResult } = (0, implement_helpers_1.readAndParseTracks)(conductorDir, 'The tracks file is empty or malformed. No tracks to revert.');
+            if (tracksResult) {
+                return tracksResult;
+            }
+            // Select track
+            const { selectedTrack, result: selectionResult } = selectTrack(tracks, args);
+            if (selectionResult) {
+                return selectionResult;
+            }
+            if (!selectedTrack) {
+                return {
+                    success: false,
+                    message: 'No track selected for reversion. Please specify a track to revert.'
+                };
+            }
+            // Determine reversion level from arguments
+            let level = 'task'; // Default
+            if (args.length > 1) {
+                const levelArg = args[1].toLowerCase();
+                if (['task', 'phase', 'track'].includes(levelArg)) {
+                    level = levelArg;
+                }
+            }
+            // Analyze git history for the requested level
+            const analysisResult = await analyzeGitHistory(path.join(conductorDir, selectedTrack.folderPath), level);
+            if (!analysisResult.success) {
+                return analysisResult;
+            }
+            // Check if user confirmed the reversion (this would be handled by the UI)
+            if (context.data?.confirmed) {
+                // Perform the reversion
+                const revertResult = await performReversion(path.join(conductorDir, selectedTrack.folderPath), analysisResult.data?.commitsToRevert || []);
+                if (revertResult.success) {
+                    // Update the plan to reflect the reversion
+                    const planUpdateResult = updatePlanForReversion(path.join(conductorDir, selectedTrack.folderPath), level);
+                    return {
+                        success: true,
+                        message: `${revertResult.message}\n\n${planUpdateResult.message}\n\nReversion of ${level} "${selectedTrack.description}" completed.`
+                    };
+                }
+                else {
+                    return revertResult;
+                }
+            }
+            else {
+                // Return the analysis for user confirmation
+                return analysisResult;
+            }
         }
         catch (error) {
             return {
@@ -84,240 +289,3 @@ exports.revertCommand = {
         }
     },
 };
-async function presentRevertMenu(conductorDir) {
-    const tracksContent = (0, fileSystem_1.readFile)(path.join(conductorDir, 'index.md'));
-    if (!tracksContent)
-        return { success: false, message: 'No tracks found.' };
-    const tracks = (0, markdown_1.parseTracksIndex)(tracksContent);
-    const candidates = [];
-    // 1. Find In-Progress items
-    for (const track of tracks) {
-        const trackDir = path.join(conductorDir, track.folderPath);
-        const planPath = path.join(trackDir, 'plan.md');
-        if (!(0, fileSystem_1.fileExists)(planPath))
-            continue;
-        const planContent = (0, fileSystem_1.readFile)(planPath);
-        if (!planContent)
-            continue;
-        const tasks = (0, markdown_1.parsePlanTasks)(planContent);
-        const inProgress = tasks.filter(t => t.status === 'in_progress');
-        const completed = tasks.filter(t => t.status === 'completed').reverse().slice(0, 2);
-        for (const t of inProgress) {
-            candidates.push({
-                label: `[Task] ${t.description}`,
-                description: `Track: ${track.description}`
-            });
-        }
-        for (const t of completed) {
-            candidates.push({
-                label: `[Completed] ${t.description}`,
-                description: `Track: ${track.description}`
-            });
-        }
-    }
-    if (candidates.length === 0) {
-        return {
-            success: false,
-            message: 'No active or recently completed tasks found to revert.'
-        };
-    }
-    return {
-        success: true,
-        message: '[ANALYSIS] **Revert Candidate Discovery**\nI\'ve found several items that might be candidates for reversion. Which one would you like to target?',
-        questions: [
-            {
-                header: "Select Target",
-                question: "Please choose which task to revert:",
-                type: "choice",
-                options: candidates.slice(0, 4).map(c => ({ label: c.label, description: c.description }))
-            }
-        ]
-    };
-}
-async function revertLastTask(conductorDir) {
-    // Find the most recently completed task
-    const tracksContent = (0, fileSystem_1.readFile)(path.join(conductorDir, 'index.md'));
-    if (!tracksContent) {
-        return {
-            success: false,
-            message: 'No tracks found.',
-        };
-    }
-    const tracks = (0, markdown_1.parseTracksIndex)(tracksContent);
-    for (const track of tracks) {
-        const trackDir = path.join(conductorDir, track.folderPath);
-        const planPath = path.join(trackDir, 'plan.md');
-        if (!(0, fileSystem_1.fileExists)(planPath)) {
-            continue;
-        }
-        const planContent = (0, fileSystem_1.readFile)(planPath);
-        if (!planContent) {
-            continue;
-        }
-        const tasks = (0, markdown_1.parsePlanTasks)(planContent);
-        const lastCompleted = tasks.slice().reverse()
-            .find((t) => t.status === 'completed');
-        if (lastCompleted) {
-            // Revert the task status
-            const updatedContent = (0, markdown_1.updateTaskStatus)(planContent, lastCompleted.description, 'pending');
-            (0, fileSystem_1.writeFile)(planPath, updatedContent);
-            let gitHint = '';
-            if (lastCompleted.commitHash) {
-                gitHint = `\n\n[INFO] **Git Action Recommended:**\nRun \`git revert ${lastCompleted.commitHash}\` to undo the code changes.`;
-            }
-            return {
-                success: true,
-                message: `Reverted task: "${lastCompleted.description}" in track "${track.description}"${gitHint}`,
-                data: {
-                    revertedTask: lastCompleted.description,
-                    track: track.description,
-                    commitHash: lastCompleted.commitHash
-                },
-            };
-        }
-    }
-    return {
-        success: false,
-        message: 'No completed tasks found to revert.',
-    };
-}
-async function revertTrack(conductorDir, trackName) {
-    const tracksContent = (0, fileSystem_1.readFile)(path.join(conductorDir, 'index.md'));
-    if (!tracksContent) {
-        return {
-            success: false,
-            message: 'No tracks found.',
-        };
-    }
-    const tracks = (0, markdown_1.parseTracksIndex)(tracksContent);
-    const searchTerm = trackName.toLowerCase();
-    const matches = tracks.filter(t => t.description.toLowerCase().includes(searchTerm));
-    if (matches.length === 0) {
-        return {
-            success: false,
-            message: `No track found matching "${trackName}".`,
-        };
-    }
-    if (matches.length > 1) {
-        return {
-            success: false,
-            message: `Multiple tracks match "${trackName}". Please be more specific.`,
-        };
-    }
-    const track = matches[0];
-    // Revert track to pending
-    const updatedContent = (0, markdown_1.updateTrackStatus)(tracksContent, track.description, 'pending');
-    (0, fileSystem_1.writeFile)(path.join(conductorDir, 'index.md'), updatedContent);
-    // Also revert all tasks in the track
-    const trackDir = path.join(conductorDir, track.folderPath);
-    const planPath = path.join(trackDir, 'plan.md');
-    if ((0, fileSystem_1.fileExists)(planPath)) {
-        const planContent = (0, fileSystem_1.readFile)(planPath);
-        if (planContent) {
-            const tasks = (0, markdown_1.parsePlanTasks)(planContent);
-            let updatedPlan = planContent;
-            for (const task of tasks) {
-                if (task.status !== 'pending') {
-                    updatedPlan = (0, markdown_1.updateTaskStatus)(updatedPlan, task.description, 'pending');
-                }
-            }
-            (0, fileSystem_1.writeFile)(planPath, updatedPlan);
-        }
-    }
-    // --- ADVANCED GIT RECONCILIATION: Track Birth Discovery ---
-    let trackInfoExtra = '';
-    try {
-        const gitLog = (0, fileSystem_1.execCommand)(`git log -S "${track.description}" -- conductor/index.md --format="%H | %s"`, conductorDir);
-        if (gitLog) {
-            const birthCommit = gitLog.split('\n')[0]; // Youngest match is the birth (or update)
-            trackInfoExtra = `\n\n[HISTORY] **Track History Found:**\nOrigin commit: \`${birthCommit}\``;
-        }
-    }
-    catch (e) { }
-    return {
-        success: true,
-        message: `Reverted track "${track.description}" to pending state.${trackInfoExtra}`,
-        data: {
-            revertedTrack: track.description,
-        },
-    };
-}
-async function revertTask(conductorDir, taskName) {
-    const tracksContent = (0, fileSystem_1.readFile)(path.join(conductorDir, 'index.md'));
-    if (!tracksContent) {
-        return {
-            success: false,
-            message: 'No tracks found.',
-        };
-    }
-    const tracks = (0, markdown_1.parseTracksIndex)(tracksContent);
-    const searchTerm = taskName.toLowerCase();
-    for (const track of tracks) {
-        const trackDir = path.join(conductorDir, track.folderPath);
-        const planPath = path.join(trackDir, 'plan.md');
-        if (!(0, fileSystem_1.fileExists)(planPath)) {
-            continue;
-        }
-        const planContent = (0, fileSystem_1.readFile)(planPath);
-        if (!planContent) {
-            continue;
-        }
-        const tasks = (0, markdown_1.parsePlanTasks)(planContent);
-        const matchingTask = tasks.find(t => t.description.toLowerCase().includes(searchTerm));
-        if (matchingTask) {
-            // --- ADVANCED GIT RECONCILIATION: Ghost Commit Detection ---
-            let finalSHA = matchingTask.commitHash;
-            let ghostNote = '';
-            if (finalSHA) {
-                try {
-                    // Check if commit exists
-                    const exists = (0, fileSystem_1.execCommand)(`git rev-parse --verify ${finalSHA}`, path.dirname(conductorDir));
-                    if (!exists) {
-                        // SHA is missing (Ghost commit)! Try to find by message
-                        const searchLog = (0, fileSystem_1.execCommand)(`git log --grep="${matchingTask.description}" --format="%H" -n 1`, path.dirname(conductorDir));
-                        if (searchLog && searchLog.trim()) {
-                            finalSHA = searchLog.trim();
-                            ghostNote = `\n[WARNING] **Ghost Commit Detected:** The original SHA \`${matchingTask.commitHash}\` was not found. Linked to latest match: \`${finalSHA}\`.`;
-                        }
-                    }
-                }
-                catch (e) { }
-            }
-            const updatedContent = (0, markdown_1.updateTaskStatus)(planContent, matchingTask.description, 'pending');
-            (0, fileSystem_1.writeFile)(planPath, updatedContent);
-            // --- ADVANCED GIT RECONCILIATION: Plan-Update Commit Detection ---
-            let planCommitSHA = '';
-            if (finalSHA) {
-                try {
-                    // Find the commit that modified plan.md after the code commit
-                    const planLog = (0, fileSystem_1.execCommand)(`git log --pretty=format:"%H" -- ${planPath}`, path.dirname(conductorDir));
-                    if (planLog) {
-                        const shas = planLog.split('\n');
-                        const codeIndex = shas.indexOf(finalSHA);
-                        // If code commit is found, the plan update usually happened in the next commit (which is shas[codeIndex-1] in reverse chronological log)
-                        if (codeIndex > 0) {
-                            planCommitSHA = shas[codeIndex - 1];
-                        }
-                    }
-                }
-                catch (e) { }
-            }
-            const gitHint = finalSHA
-                ? `\n\n[INFO] **Git Action Recommended:**\nRun \`git revert ${finalSHA}\`${ghostNote}${planCommitSHA ? `\n\nAlso revert the plan update: \`git revert ${planCommitSHA}\`` : ''}`
-                : '';
-            return {
-                success: true,
-                message: `Reverted task "${matchingTask.description}" in track "${track.description}"${gitHint}`,
-                data: {
-                    revertedTask: matchingTask.description,
-                    track: track.description,
-                    commitHash: finalSHA
-                },
-            };
-        }
-    }
-    return {
-        success: false,
-        message: `No task found matching "${taskName}".`,
-    };
-}

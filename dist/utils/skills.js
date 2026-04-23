@@ -92,6 +92,15 @@ function loadAllSkills(skillsDir) {
 function parseSkillCatalog(content) {
     const signals = {};
     // 1. Support for Section-based format (### SkillID)
+    parseSectionBasedFormat(content, signals);
+    // 2. Support for Table-based format (| Skill Name | ... | Triggers |)
+    parseTableBasedFormat(content, signals);
+    return signals;
+}
+/**
+ * Parse section-based format of skill catalog
+ */
+function parseSectionBasedFormat(content, signals) {
     if (content.includes('### ')) {
         const sections = content.split(/\n###\s+/);
         for (const section of sections) {
@@ -109,36 +118,38 @@ function parseSkillCatalog(content) {
             }
         }
     }
-    // 2. Support for Table-based format (| Skill Name | ... | Triggers |)
-    if (content.includes('|')) {
-        const lines = content.split('\n');
-        for (const line of lines) {
-            // Basic check if it's a data row (contains pipes and not just headers/separators)
-            if (line.includes('|') && !line.includes('---') && !line.includes('Skill Name')) {
-                const parts = line.split('|').map(p => p.trim());
-                if (parts.length >= 5) {
-                    // Format based on current catalog.md:
-                    // | (0) | (1) **id** | (2) version | (3) description | (4) triggers | (5) path | (6) |
-                    // Wait, splitting "| **id** | ..." gives ["", " **id** ", ...]
-                    let id = parts[1].replace(/\*\*/g, '').trim();
-                    let triggersStr = parts[4];
-                    if (id && triggersStr) {
-                        const triggerArray = triggersStr
-                            .split(',')
-                            .map(t => t.trim().replace(/^`|`$/g, '').toLowerCase())
-                            .filter(t => t.length > 0);
-                        if (signals[id]) {
-                            signals[id] = [...new Set([...signals[id], ...triggerArray])];
-                        }
-                        else {
-                            signals[id] = triggerArray;
-                        }
+}
+/**
+ * Parse table-based format of skill catalog
+ */
+function parseTableBasedFormat(content, signals) {
+    if (!content.includes('|'))
+        return;
+    const lines = content.split('\n');
+    for (const line of lines) {
+        // Basic check if it's a data row (contains pipes and not just headers/separators)
+        if (line.includes('|') && !line.includes('---') && !line.includes('Skill Name')) {
+            const parts = line.split('|').map(p => p.trim());
+            if (parts.length >= 5) {
+                // Format based on current catalog.md:
+                // | (0) | (1) **id** | (2) version | (3) description | (4) triggers | (5) path | (6) |
+                let id = parts[1].replace(/\*\*/g, '').trim();
+                let triggersStr = parts[4];
+                if (id && triggersStr) {
+                    const triggerArray = triggersStr
+                        .split(',')
+                        .map(t => t.trim().replace(/^`|`$/g, '').toLowerCase())
+                        .filter(t => t.length > 0);
+                    if (signals[id]) {
+                        signals[id] = [...new Set([...signals[id], ...triggerArray])];
+                    }
+                    else {
+                        signals[id] = triggerArray;
                     }
                 }
             }
         }
     }
-    return signals;
 }
 /**
  * Parse a skill markdown file (Supports YAML Frontmatter and Standard Header)
@@ -247,95 +258,126 @@ function parseYamlFrontmatter(yamlContent) {
     let dependencies = [];
     let calls = [];
     const yamlLines = yamlContent.split(/\r?\n/);
-    let inTriggers = false;
-    let inTechAffinity = false;
-    let inDependencies = false;
-    let inCalls = false;
-    let descriptionLines = [];
-    let inDescription = false;
+    const parsingState = {
+        inTriggers: false,
+        inTechAffinity: false,
+        inDependencies: false,
+        inCalls: false,
+        descriptionLines: [],
+        inDescription: false
+    };
     for (const line of yamlLines) {
-        if (line.startsWith('name:')) {
-            title = line.replace('name:', '').trim();
-            inTriggers = false;
-            inTechAffinity = false;
-            inDependencies = false;
-            inCalls = false;
-            inDescription = false;
-        }
-        else if (line.startsWith('triggers:')) {
-            inTriggers = true;
-            inTechAffinity = false;
-            inDependencies = false;
-            inCalls = false;
-            inDescription = false;
-        }
-        else if (line.startsWith('tech_affinity:')) {
-            inTechAffinity = true;
-            inTriggers = false;
-            inDependencies = false;
-            inCalls = false;
-            inDescription = false;
-        }
-        else if (line.startsWith('dependencies:')) {
-            inDependencies = true;
-            inTriggers = false;
-            inTechAffinity = false;
-            inCalls = false;
-            inDescription = false;
-        }
-        else if (line.startsWith('calls:')) {
-            inCalls = true;
-            inTriggers = false;
-            inTechAffinity = false;
-            inDependencies = false;
-            inDescription = false;
-        }
-        else if (line.startsWith('description:')) {
-            inDescription = true;
-            inTriggers = false;
-            inTechAffinity = false;
-            inDependencies = false;
-            inCalls = false;
-        }
-        else if (inTriggers && line.trim().startsWith('-')) {
-            const t = line.trim().replace(/^-\s*["']?|["']?$/g, '').trim();
-            if (t)
-                keywords.push(t);
-        }
-        else if (inTechAffinity && line.trim().startsWith('-')) {
-            const t = line.trim().replace(/^-\s*["']?|["']?$/g, '').trim();
-            if (t)
-                techAffinity.push(t);
-        }
-        else if (inDependencies && line.trim().startsWith('-')) {
-            const t = line.trim().replace(/^-\s*["']?|["']?$/g, '').trim();
-            if (t)
-                dependencies.push(t);
-        }
-        else if (inCalls && line.trim().startsWith('-')) {
-            const t = line.trim().replace(/^-\s*["']?|["']?$/g, '').trim();
-            if (t)
-                calls.push(t);
-        }
-        else if (inDescription && (line.startsWith(' ') || line.trim() === '')) {
-            descriptionLines.push(line.trim());
-        }
-        else if (line.trim() !== '') {
-            inTriggers = false;
-            inDependencies = false;
-            inCalls = false;
-            inDescription = false;
-        }
+        updateParsingState(line, parsingState);
+        handleListItem(line, parsingState, keywords, techAffinity, dependencies, calls);
+        handleDescriptionLine(line, parsingState);
+        resetParsingStateOnNewSection(line, parsingState);
     }
     return { title, keywords, techAffinity, dependencies, calls };
+}
+/**
+ * Update parsing state based on the current line
+ */
+function updateParsingState(line, state) {
+    if (line.startsWith('name:')) {
+        state.title = line.replace('name:', '').trim();
+        resetAllFlags(state);
+    }
+    else if (line.startsWith('triggers:')) {
+        state.inTriggers = true;
+        resetOtherFlags(state, 'inTriggers');
+    }
+    else if (line.startsWith('tech_affinity:')) {
+        state.inTechAffinity = true;
+        resetOtherFlags(state, 'inTechAffinity');
+    }
+    else if (line.startsWith('dependencies:')) {
+        state.inDependencies = true;
+        resetOtherFlags(state, 'inDependencies');
+    }
+    else if (line.startsWith('calls:')) {
+        state.inCalls = true;
+        resetOtherFlags(state, 'inCalls');
+    }
+    else if (line.startsWith('description:')) {
+        state.inDescription = true;
+        resetOtherFlags(state, 'inDescription');
+    }
+}
+/**
+ * Handle list items based on the current parsing state
+ */
+function handleListItem(line, state, keywords, techAffinity, dependencies, calls) {
+    if (state.inTriggers && line.trim().startsWith('-')) {
+        const t = line.trim().replace(/^-\s*["']?|["']?$/g, '').trim();
+        if (t)
+            keywords.push(t);
+    }
+    else if (state.inTechAffinity && line.trim().startsWith('-')) {
+        const t = line.trim().replace(/^-\s*["']?|["']?$/g, '').trim();
+        if (t)
+            techAffinity.push(t);
+    }
+    else if (state.inDependencies && line.trim().startsWith('-')) {
+        const t = line.trim().replace(/^-\s*["']?|["']?$/g, '').trim();
+        if (t)
+            dependencies.push(t);
+    }
+    else if (state.inCalls && line.trim().startsWith('-')) {
+        const t = line.trim().replace(/^-\s*["']?|["']?$/g, '').trim();
+        if (t)
+            calls.push(t);
+    }
+}
+/**
+ * Handle description lines
+ */
+function handleDescriptionLine(line, state) {
+    if (state.inDescription && (line.startsWith(' ') || line.trim() === '')) {
+        state.descriptionLines.push(line.trim());
+    }
+}
+/**
+ * Reset parsing flags when encountering a new section
+ */
+function resetParsingStateOnNewSection(line, state) {
+    if (line.trim() !== '') {
+        if (!line.startsWith('triggers:') && !line.startsWith('tech_affinity:') &&
+            !line.startsWith('dependencies:') && !line.startsWith('calls:') &&
+            !line.startsWith('description:')) {
+            resetAllFlags(state);
+        }
+    }
+}
+/**
+ * Reset all parsing flags
+ */
+function resetAllFlags(state) {
+    state.inTriggers = false;
+    state.inTechAffinity = false;
+    state.inDependencies = false;
+    state.inCalls = false;
+    state.inDescription = false;
+}
+/**
+ * Reset all flags except the specified one
+ */
+function resetOtherFlags(state, keepFlag) {
+    const flags = ['inTriggers', 'inTechAffinity', 'inDependencies', 'inCalls', 'inDescription'];
+    for (const flag of flags) {
+        if (flag !== keepFlag) {
+            state[flag] = false;
+        }
+    }
 }
 /**
  * Internal utility to tokenize text for relevance scoring
  */
 function tokenize(text) {
+    if (!text)
+        return [];
     return text
         .toLowerCase()
-        .replace(/[^\w\s\u00C0-\u00FF]/g, ' ') // Support Portuguese
+        .replace(/[^\w\sÀ-ÿ]/g, ' ') // Support Portuguese
         .split(/\s+/)
         .filter(word => word.length > 1); // Keep technical terms (UI, DB, AI, JS)
 }
@@ -355,7 +397,7 @@ function calculateRelevance(skill, trackTokens, productTokens, techTokens) {
     };
     const titleTokens = tokenize(skill.title);
     const purposeTokens = tokenize(skill.purpose || '');
-    const keywordTokens = skill.keywords.flatMap(k => tokenize(k));
+    const keywordTokens = (skill.keywords ?? []).flatMap(k => tokenize(k));
     const directiveTokens = tokenize(skill.directives || '');
     const contentTokens = tokenize(skill.content);
     // 1. Check Track Prompt overlap (Primary Intention)
@@ -373,7 +415,7 @@ function calculateRelevance(skill, trackTokens, productTokens, techTokens) {
     }
     // 2. Check Tech Affinity overlap (Contextual relevance)
     for (const tech of techTokens) {
-        if (skill.techAffinity.some(a => a.toLowerCase() === tech)) {
+        if ((skill.techAffinity ?? []).some(a => a.toLowerCase() === tech)) {
             score += WEIGHTS.TECH_AFFINITY;
         }
     }
@@ -415,9 +457,9 @@ function getRecommendedSkills(contextDescription, allSkills) {
             score: combinedScore
         };
     });
-    // Filter skills with score > 1.5 (lowered threshold to accommodate semantic matching)
+    // Filter skills with score > 0.5 (standard threshold for keyword matching)
     return combinedScores
-        .filter(item => item.score > 1.5)
+        .filter(item => item.score > 0.5)
         .sort((a, b) => b.score - a.score);
 }
 /**
@@ -441,6 +483,8 @@ function calculateSemanticRelevance(contextDescription, allSkills) {
  * Extract the main task or goal from the context
  */
 function extractTaskSegment(context) {
+    if (!context)
+        return '';
     // Match common action words followed by the main goal
     const taskRegex = /(criar|fazer|desenvolver|implementar|construir|montar|desenhar|fazer\s+um\s+clone\s+de|criar\s+um\s+jogo\s+de|construir\s+um\s+sistema\s+de)/i;
     const goalRegex = /(jogo|aplicativo|sistema|clone|pagina|tela|interface|app|web\s+app|site|programa|software)/i;
@@ -461,6 +505,8 @@ function extractTaskSegment(context) {
  * Extract technology-related keywords from context
  */
 function extractTechnologySegment(context) {
+    if (!context)
+        return '';
     // Match technology terms
     const techTerms = [
         'html', 'css', 'js', 'javascript', 'three', 'threejs', 'three\\.js',
@@ -481,6 +527,8 @@ function extractTechnologySegment(context) {
  * Extract requirement keywords from context
  */
 function extractRequirementsSegment(context) {
+    if (!context)
+        return '';
     const requirementKeywords = [
         'simples', 'básico', 'avançado', 'responsivo', 'performático', 'seguro',
         'escalável', 'rápido', 'limpo', 'bom', 'ótimo', 'melhor', 'eficiente',
@@ -493,6 +541,8 @@ function extractRequirementsSegment(context) {
  * Extract constraint keywords from context
  */
 function extractConstraintsSegment(context) {
+    if (!context)
+        return '';
     const constraintKeywords = [
         'simples', 'fácil', 'rápido', 'barato', 'pequeno', 'leve', 'básico',
         'sem complexidade', 'não muito difícil', 'apenas funcional',
@@ -505,37 +555,82 @@ function extractConstraintsSegment(context) {
  */
 function calculateDeepSemanticRelevance(skill, segments) {
     let score = 0;
-    // Domain relevance
-    if (segments.task.includes('jogo') && skill.domain.toLowerCase().includes('frontend')) {
-        score += 20;
+    // Calculate scores for each segment
+    score += calculateDomainScore(segments, skill);
+    score += calculateTechnologyScore(segments, skill);
+    score += calculatePurposeScore(segments, skill);
+    score += calculateTitleScore(segments, skill);
+    score += calculateKeywordScore(segments, skill);
+    score += calculateFrontendBoostScore(segments, skill);
+    return score;
+}
+/**
+ * Calculate domain relevance score
+ */
+function calculateDomainScore(segments, skill) {
+    if (segments.task && segments.task.includes('jogo') && skill.domain.toLowerCase().includes('frontend')) {
+        return 20;
     }
-    // Technology matching
+    return 0;
+}
+/**
+ * Calculate technology matching score
+ */
+function calculateTechnologyScore(segments, skill) {
+    if (!skill.techAffinity || !segments.technology) {
+        return 0;
+    }
     const techMatches = skill.techAffinity.filter(tech => segments.technology.toLowerCase().includes(tech.toLowerCase())).length;
-    score += techMatches * 8;
-    // Semantic matching with purpose
-    if (skill.purpose) {
-        const purposeScore = calculateTextSimilarity(segments.task + ' ' + segments.requirements, skill.purpose.toLowerCase());
-        score += purposeScore * 15;
-    }
-    // Semantic matching with title
+    return techMatches * 8;
+}
+/**
+ * Calculate semantic matching score with purpose
+ */
+function calculatePurposeScore(segments, skill) {
+    if (!skill.purpose || !segments.task || !segments.requirements)
+        return 0;
+    const purposeScore = calculateTextSimilarity(segments.task + ' ' + segments.requirements, skill.purpose.toLowerCase());
+    return purposeScore * 15;
+}
+/**
+ * Calculate semantic matching score with title
+ */
+function calculateTitleScore(segments, skill) {
+    if (!segments.task || !skill.title)
+        return 0;
     const titleScore = calculateTextSimilarity(segments.task, skill.title.toLowerCase());
-    score += titleScore * 10;
-    // Semantic matching with keywords (more lenient)
+    return titleScore * 10;
+}
+/**
+ * Calculate semantic matching score with keywords
+ */
+function calculateKeywordScore(segments, skill) {
+    if (!segments.task && !segments.requirements)
+        return 0;
+    if (!skill.keywords)
+        return 0;
     const keywordMatches = skill.keywords.filter(keyword => {
         // Check for partial matches and related terms
         const keywordLower = keyword.toLowerCase();
-        return segments.task.includes(keywordLower) ||
-            segments.requirements.includes(keywordLower) ||
+        return (segments.task && segments.task.includes(keywordLower)) ||
+            (segments.requirements && segments.requirements.includes(keywordLower)) ||
             calculateTextSimilarity(segments.task, keywordLower) > 0.3;
     }).length;
-    score += keywordMatches * 5;
-    // Boost for general frontend skills if HTML/CSS/JS mentioned
-    if (segments.technology.includes('html') || segments.technology.includes('css') || segments.technology.includes('js')) {
-        if (skill.domain.toLowerCase().includes('frontend') || skill.techAffinity.some(tech => ['html', 'css', 'javascript'].includes(tech.toLowerCase()))) {
-            score += 15;
-        }
+    return keywordMatches * 5;
+}
+/**
+ * Calculate boost for frontend skills when HTML/CSS/JS mentioned
+ */
+function calculateFrontendBoostScore(segments, skill) {
+    const hasFrontendTech = segments.technology && (segments.technology.includes('html') ||
+        segments.technology.includes('css') ||
+        segments.technology.includes('js'));
+    const isFrontendSkill = skill.domain && skill.techAffinity && (skill.domain.toLowerCase().includes('frontend') ||
+        skill.techAffinity.some(tech => ['html', 'css', 'javascript'].includes(tech.toLowerCase())));
+    if (hasFrontendTech && isFrontendSkill) {
+        return 15;
     }
-    return score;
+    return 0;
 }
 /**
  * Calculate semantic similarity between texts using a combination of methods

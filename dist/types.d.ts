@@ -244,16 +244,3 @@ export interface PlanModePolicy {
     maxSessionDurationMinutes?: number;
     rateLimit?: number;
 }
-export interface PlanModePolicy {
-    autoApproval?: boolean;
-    reviewRequired?: boolean;
-    validationLevels?: string[];
-    allowedCommands?: string[];
-    disallowedCommands?: string[];
-    restrictDestructiveOperations?: boolean;
-    restrictFileSystemOperations?: boolean;
-    restrictGitOperations?: boolean;
-    maxCommandsPerSession?: number;
-    maxSessionDurationMinutes?: number;
-    rateLimit?: number;
-}
